@@ -12,5 +12,5 @@ pub use models::{
 };
 
 pub use generators::{PdfGenerator, ExcelGenerator};
-pub use templates::TemplateManager;
+pub use templates::{TemplateEngine, TemplateData, InvoiceData, ReportData, ReceiptData};
 pub use storage::s3::S3Client;

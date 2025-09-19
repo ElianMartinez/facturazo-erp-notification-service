@@ -3,12 +3,10 @@ use actix_web_httpauth::extractors::bearer::{BearerAuth, Config};
 use actix_web_httpauth::extractors::AuthenticationError;
 use actix_web_httpauth::middleware::HttpAuthentication;
 
-pub struct Authentication;
+pub type Authentication = HttpAuthentication<BearerAuth, fn(ServiceRequest, BearerAuth) -> Result<ServiceRequest, (Error, ServiceRequest)>>;
 
-impl Default for Authentication {
-    fn default() -> HttpAuthentication<BearerAuth, fn(ServiceRequest, BearerAuth) -> Result<ServiceRequest, (Error, ServiceRequest)>> {
-        HttpAuthentication::bearer(validator)
-    }
+pub fn create_auth_middleware() -> Authentication {
+    HttpAuthentication::bearer(validator)
 }
 
 async fn validator(
@@ -25,12 +23,33 @@ async fn validator(
     }
 
     // Validate token (simplified for demo)
+    // In production, decode JWT and extract tenant_id and user_id
     if token.starts_with("valid_") {
-        // Extract user info from token and add to request extensions
+        // Extract tenant and user from token
+        // Example: valid_tenant123_user456
+        let parts: Vec<&str> = token.split('_').collect();
+        let tenant_id = parts.get(1)
+            .and_then(|s| s.strip_prefix("tenant"))
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(1);
+        let user_id = parts.get(2)
+            .and_then(|s| s.strip_prefix("user"))
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(1);
+
+        // Add to request extensions
         req.extensions_mut().insert(UserInfo {
-            user_id: "user123".to_string(),
-            organization_id: "org456".to_string(),
+            tenant_id,
+            user_id,
+            organization_id: None,
         });
+
+        // Also add AuthInfo for handlers
+        req.extensions_mut().insert(crate::api::handlers::AuthInfo {
+            tenant_id,
+            user_id,
+        });
+
         Ok(req)
     } else {
         let config = Config::default();
@@ -40,6 +59,13 @@ async fn validator(
 
 #[derive(Clone)]
 pub struct UserInfo {
-    pub user_id: String,
-    pub organization_id: String,
+    pub tenant_id: i64,
+    pub user_id: i64,
+    pub organization_id: Option<String>,
+}
+
+// Helper function to extract tenant and user info from request
+pub fn extract_tenant_user(req: &actix_web::HttpRequest) -> Option<(i64, i64)> {
+    req.extensions().get::<UserInfo>()
+        .map(|info| (info.tenant_id, info.user_id))
 }

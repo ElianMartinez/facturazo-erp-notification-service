@@ -1,9 +1,7 @@
 use actix_web::middleware::Compress;
 
-pub struct Compression;
+pub type Compression = Compress;
 
-impl Default for Compression {
-    fn default() -> Compress {
-        Compress::default()
-    }
+pub fn create_compression_middleware() -> Compression {
+    Compress::default()
 }

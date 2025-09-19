@@ -1,11 +1,11 @@
-use actix_web::{web, App, HttpServer, middleware};
 use actix_cors::Cors;
-use document_generator::api::{ApiState, configure_routes};
+use actix_web::{middleware, web, App, HttpServer};
+use anyhow::Result;
 use document_generator::api::state::AppConfig;
-use tracing_subscriber::EnvFilter;
+use document_generator::api::{configure_routes, ApiState};
 use prometheus::Registry;
 use std::env;
-use anyhow::Result;
+use tracing_subscriber::EnvFilter;
 
 #[actix_web::main]
 async fn main() -> Result<()> {
@@ -15,8 +15,7 @@ async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info"))
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
 
@@ -24,8 +23,9 @@ async fn main() -> Result<()> {
 
     // Initialize Prometheus metrics
     let prometheus = Registry::new();
-    prometheus::default_registry()
-        .register(Box::new(prometheus::process_collector::ProcessCollector::for_self()))?;
+    prometheus::default_registry().register(Box::new(
+        prometheus::process_collector::ProcessCollector::for_self(),
+    ))?;
 
     // Load configuration
     let config = load_config()?;
@@ -79,8 +79,7 @@ fn load_config() -> Result<AppConfig> {
             .unwrap_or_else(|_| "doc.requests.bulk".to_string()),
         s3_bucket_documents: env::var("S3_BUCKET_DOCUMENTS")
             .unwrap_or_else(|_| "documents".to_string()),
-        s3_bucket_temp: env::var("S3_BUCKET_TEMP")
-            .unwrap_or_else(|_| "temp-uploads".to_string()),
+        s3_bucket_temp: env::var("S3_BUCKET_TEMP").unwrap_or_else(|_| "temp-uploads".to_string()),
         enable_compression: env::var("ENABLE_COMPRESSION")
             .unwrap_or_else(|_| "true".to_string())
             .parse::<bool>()

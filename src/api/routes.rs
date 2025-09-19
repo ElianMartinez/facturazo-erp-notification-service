@@ -3,7 +3,8 @@ use actix_web::middleware::Logger;
 use actix_cors::Cors;
 
 use super::handlers;
-use super::middleware::{auth::Authentication, compression::Compression};
+use super::template_handler;
+use super::middleware::{auth::create_auth_middleware, compression::create_compression_middleware};
 
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg
@@ -15,8 +16,8 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         // API v1
         .service(
             web::scope("/api/v1")
-                .wrap(Authentication::default())
-                .wrap(Compression::default())
+                .wrap(create_auth_middleware())
+                .wrap(create_compression_middleware())
                 .wrap(Logger::default())
                 .wrap(
                     Cors::default()
@@ -43,6 +44,9 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 .service(
                     web::scope("/templates")
                         .route("", web::get().to(list_templates))
+                        .route("/list", web::get().to(template_handler::list_templates))
+                        .route("/generate", web::post().to(template_handler::generate_pdf_from_template))
+                        .route("/preview/{id}", web::get().to(template_handler::preview_template))
                         .route("/{id}", web::get().to(get_template))
                         .route("/{id}", web::put().to(update_template))
                         .route("/{id}/reload", web::post().to(reload_template))

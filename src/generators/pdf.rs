@@ -4,9 +4,9 @@ use std::process::Command;
 use uuid::Uuid;
 use std::fs;
 
-use crate::models::{InvoiceRequest, ReportRequest, RenderOptions};
 use crate::templates::TemplateManager;
 
+/// Generador genérico de PDFs usando Typst
 pub struct PdfGenerator {
     template_manager: Arc<TemplateManager>,
     temp_dir: String,
@@ -23,57 +23,38 @@ impl PdfGenerator {
         }
     }
 
-    pub async fn generate_invoice(&self, request: &InvoiceRequest) -> Result<Vec<u8>> {
-        // Get template
-        let template_content = self.template_manager
-            .get_template(&request.template_id)
+    /// Genera un PDF desde cualquier template y datos JSON
+    pub async fn generate(&self, template_id: &str, data: serde_json::Value) -> Result<Vec<u8>> {
+        // El template engine se encarga de toda la lógica específica
+        let pdf_path = self.template_manager
+            .generate_pdf_from_json(template_id, data, None)
             .await?;
 
-        // Get render options
-        let options = request.options.clone()
-            .unwrap_or_else(RenderOptions::default);
+        // Leer el PDF generado
+        let pdf_bytes = tokio::fs::read(&pdf_path).await?;
 
-        // Render with template engine
-        let rendered = self.template_manager
-            .get_engine()
-            .render_invoice(&request.template_id, &request.data, &options)
-            .await?;
+        // Limpiar el archivo temporal
+        let _ = tokio::fs::remove_file(&pdf_path).await;
 
-        // Compile to PDF using Typst
-        self.compile_typst_to_pdf(&rendered).await
+        Ok(pdf_bytes)
     }
 
-    pub async fn generate_report(&self, request: &ReportRequest, data: Vec<serde_json::Value>) -> Result<Vec<u8>> {
-        // Get template
-        let template_content = self.template_manager
-            .get_template(&request.template_id)
-            .await?;
-
-        // Get render options
-        let options = request.options.as_ref()
-            .and_then(|o| o.render.clone())
-            .unwrap_or_else(RenderOptions::default);
-
-        // Render with template engine
-        let rendered = self.template_manager
-            .get_engine()
-            .render_report(&request.template_id, request, data)
-            .await?;
-
-        // Compile to PDF using Typst
-        self.compile_typst_to_pdf(&rendered).await
+    /// Genera un PDF con un template personalizado (no registrado)
+    pub async fn generate_with_custom_template(&self, typst_content: &str) -> Result<Vec<u8>> {
+        self.compile_typst_to_pdf(typst_content).await
     }
 
+    /// Compila contenido Typst a PDF
     async fn compile_typst_to_pdf(&self, typst_content: &str) -> Result<Vec<u8>> {
-        // Create temporary file
+        // Crear archivos temporales
         let temp_id = Uuid::new_v4();
         let typ_path = format!("{}/temp_{}.typ", self.temp_dir, temp_id);
         let pdf_path = format!("{}/temp_{}.pdf", self.temp_dir, temp_id);
 
-        // Write Typst content
+        // Escribir contenido Typst
         tokio::fs::write(&typ_path, typst_content).await?;
 
-        // Compile with Typst
+        // Compilar con Typst
         let output = tokio::task::spawn_blocking({
             let typ_path = typ_path.clone();
             let pdf_path = pdf_path.clone();
@@ -85,7 +66,7 @@ impl PdfGenerator {
         }).await??;
 
         if !output.status.success() {
-            // Clean up temp files
+            // Limpiar archivos temporales
             let _ = fs::remove_file(&typ_path);
             return Err(anyhow::anyhow!(
                 "Typst compilation failed: {}",
@@ -93,24 +74,23 @@ impl PdfGenerator {
             ));
         }
 
-        // Read PDF bytes
+        // Leer bytes del PDF
         let pdf_bytes = tokio::fs::read(&pdf_path).await?;
 
-        // Clean up temp files
+        // Limpiar archivos temporales
         let _ = tokio::fs::remove_file(&typ_path).await;
         let _ = tokio::fs::remove_file(&pdf_path).await;
 
         Ok(pdf_bytes)
     }
 
-    pub async fn generate_with_custom_template(&self, template: &str, data: serde_json::Value) -> Result<Vec<u8>> {
-        // Render template with data
-        let mut env = minijinja::Environment::new();
-        env.add_template("custom", template)?;
-        let template = env.get_template("custom")?;
-        let rendered = template.render(&data)?;
+    /// Lista todos los templates disponibles
+    pub fn list_templates(&self) -> Vec<(String, String)> {
+        self.template_manager.list_templates()
+    }
 
-        // Compile to PDF
-        self.compile_typst_to_pdf(&rendered).await
+    /// Verifica si existe un template
+    pub fn template_exists(&self, template_id: &str) -> bool {
+        self.template_manager.template_exists(template_id)
     }
 }

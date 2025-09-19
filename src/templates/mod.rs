@@ -1,8 +1,11 @@
-pub mod manager;
-pub mod engine;
-pub mod cache;
-pub mod helpers;
+pub mod template_engine;
+pub mod template_models;
+pub mod template_trait;
+pub mod templates;
 
-pub use manager::TemplateManager;
-pub use engine::TemplateEngine;
-pub use cache::TemplateCache;
+pub use template_engine::*;
+pub use template_models::*;
+pub use template_trait::{TypstTemplate, TemplateRegistry};
+
+// Re-export TemplateEngine as TemplateManager for backward compatibility
+pub type TemplateManager = template_engine::TemplateEngine;

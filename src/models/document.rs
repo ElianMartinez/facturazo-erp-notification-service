@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
+use super::{OutputFormat, Priority};
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::{Priority, OutputFormat};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentRequest {
@@ -30,8 +30,9 @@ pub enum DocumentType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMetadata {
-    pub user_id: String,
-    pub organization_id: String,
+    pub tenant_id: i64,
+    pub user_id: i64,
+    pub organization_id: Option<String>, // Optional for backward compatibility
     pub request_time: DateTime<Utc>,
     pub ttl_seconds: Option<i64>,
     pub tags: Option<HashMap<String, String>>,
@@ -40,8 +41,9 @@ pub struct DocumentMetadata {
 impl Default for DocumentMetadata {
     fn default() -> Self {
         DocumentMetadata {
-            user_id: String::new(),
-            organization_id: String::new(),
+            tenant_id: 0,
+            user_id: 0,
+            organization_id: None,
             request_time: Utc::now(),
             ttl_seconds: Some(86400), // 24 hours
             tags: None,
@@ -60,7 +62,7 @@ pub struct DocumentResponse {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum DocumentStatus {
     Queued,
@@ -68,6 +70,33 @@ pub enum DocumentStatus {
     Completed,
     Failed,
     Cancelled,
+}
+
+impl std::fmt::Display for DocumentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DocumentStatus::Queued => write!(f, "queued"),
+            DocumentStatus::Processing => write!(f, "processing"),
+            DocumentStatus::Completed => write!(f, "completed"),
+            DocumentStatus::Failed => write!(f, "failed"),
+            DocumentStatus::Cancelled => write!(f, "cancelled"),
+        }
+    }
+}
+
+impl std::str::FromStr for DocumentStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "queued" => Ok(DocumentStatus::Queued),
+            "processing" => Ok(DocumentStatus::Processing),
+            "completed" => Ok(DocumentStatus::Completed),
+            "failed" => Ok(DocumentStatus::Failed),
+            "cancelled" => Ok(DocumentStatus::Cancelled),
+            _ => Err(format!("Unknown status: {}", s)),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

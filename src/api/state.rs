@@ -1,12 +1,13 @@
 use std::sync::Arc;
 use rdkafka::producer::FutureProducer;
 use redis::aio::ConnectionManager;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DashMapStateStore};
 
 use crate::templates::TemplateManager;
 use crate::storage::s3::S3Client;
 
+// Key format: "tenant_id:user_id"
 pub type KeyedRateLimiter = Arc<RateLimiter<String, DashMapStateStore<String>, DefaultClock>>;
 
 #[derive(Clone)]
@@ -14,7 +15,7 @@ pub struct ApiState {
     pub kafka_producer: Arc<FutureProducer>,
     pub redis: ConnectionManager,
     pub s3_client: Arc<S3Client>,
-    pub db: PgPool,
+    pub db: SqlitePool,
     pub template_manager: Arc<TemplateManager>,
     pub rate_limiter: KeyedRateLimiter,
     pub config: Arc<AppConfig>,
@@ -65,8 +66,13 @@ impl ApiState {
         // Initialize S3
         let s3_client = Arc::new(S3Client::new().await?);
 
-        // Initialize database
-        let db = PgPool::connect(&std::env::var("DATABASE_URL")?).await?;
+        // Initialize SQLite database
+        let db_url = std::env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "sqlite:documents.db".to_string());
+        let db = SqlitePool::connect(&db_url).await?;
+
+        // Run migrations
+        sqlx::migrate!("./migrations").run(&db).await?;
 
         // Initialize template manager
         let template_manager = Arc::new(

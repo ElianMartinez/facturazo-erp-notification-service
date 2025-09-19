@@ -1,4 +1,5 @@
-use aws_sdk_s3::{Client, Config, Region};
+use aws_sdk_s3::{Client, Config};
+use aws_sdk_s3::config::Region;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::presigning::PresigningConfig;
 use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};

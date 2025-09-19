@@ -15,6 +15,7 @@ use document_generator::{
     TemplateManager, S3Client,
 };
 use document_generator::models::{ReportRequest, DataSource, InvoiceRequest};
+use sqlx::SqlitePool;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -84,7 +85,7 @@ struct WorkerPool {
     semaphore: Arc<Semaphore>,
     template_manager: Arc<TemplateManager>,
     s3_client: Arc<S3Client>,
-    db: Arc<sqlx::PgPool>,
+    db: Arc<SqlitePool>,
     redis: Arc<redis::aio::ConnectionManager>,
     config: WorkerConfig,
 }
@@ -106,8 +107,8 @@ impl WorkerPool {
         // Initialize S3 client
         let s3_client = Arc::new(S3Client::new().await?);
 
-        // Initialize database
-        let db = Arc::new(sqlx::PgPool::connect(&config.database_url).await?);
+        // Initialize SQLite database
+        let db = Arc::new(SqlitePool::connect(&config.database_url).await?);
 
         // Initialize Redis
         let redis_client = redis::Client::open(config.redis_url.clone())?;
@@ -323,14 +324,17 @@ impl WorkerPool {
     }
 
     async fn update_status(&self, request: &DocumentRequest, status: DocumentStatus) -> Result<()> {
+        let id_str = request.id.to_string();
+        let status_str = status.to_string();
+
         sqlx::query!(
             r#"
             UPDATE documents
-            SET status = $1, updated_at = NOW()
-            WHERE id = $2
+            SET status = ?1, updated_at = datetime('now')
+            WHERE id = ?2
             "#,
-            status.to_string(),
-            request.id
+            status_str,
+            id_str
         )
         .execute(self.db.as_ref())
         .await?;
@@ -344,16 +348,19 @@ impl WorkerPool {
         url: String,
         processing_time: Duration,
     ) -> Result<()> {
+        let id_str = request.id.to_string();
+        let status_str = DocumentStatus::Completed.to_string();
+
         sqlx::query!(
             r#"
             UPDATE documents
-            SET status = $1, url = $2, processing_time_ms = $3, updated_at = NOW()
-            WHERE id = $4
+            SET status = ?1, url = ?2, processing_time_ms = ?3, updated_at = datetime('now')
+            WHERE id = ?4
             "#,
-            DocumentStatus::Completed.to_string(),
+            status_str,
             url,
             processing_time.as_millis() as i64,
-            request.id
+            id_str
         )
         .execute(self.db.as_ref())
         .await?;
@@ -365,15 +372,18 @@ impl WorkerPool {
     }
 
     async fn save_failed_document(&self, request: &DocumentRequest, error: String) -> Result<()> {
+        let id_str = request.id.to_string();
+        let status_str = DocumentStatus::Failed.to_string();
+
         sqlx::query!(
             r#"
             UPDATE documents
-            SET status = $1, error = $2, updated_at = NOW()
-            WHERE id = $3
+            SET status = ?1, error = ?2, updated_at = datetime('now')
+            WHERE id = ?3
             "#,
-            DocumentStatus::Failed.to_string(),
+            status_str,
             error,
-            request.id
+            id_str
         )
         .execute(self.db.as_ref())
         .await?;
@@ -390,22 +400,24 @@ impl WorkerPool {
         success: bool,
         processing_time: Duration,
     ) -> Result<()> {
-        let today = chrono::Utc::now().date_naive();
+        let today = chrono::Utc::now().date_naive().to_string();
         let doc_type = format!("{:?}", request.document_type);
         let format = format!("{:?}", request.format);
+        let org_id = request.metadata.organization_id.clone();
 
         if success {
             sqlx::query!(
                 r#"
                 INSERT INTO usage_statistics
-                    (organization_id, date, document_type, format, count, total_processing_time_ms)
-                VALUES ($1, $2, $3, $4, 1, $5)
-                ON CONFLICT (organization_id, date, document_type, format)
+                    (tenant_id, organization_id, date, document_type, format, count, total_processing_time_ms)
+                VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6)
+                ON CONFLICT (tenant_id, date, document_type, format)
                 DO UPDATE SET
                     count = usage_statistics.count + 1,
-                    total_processing_time_ms = usage_statistics.total_processing_time_ms + $5
+                    total_processing_time_ms = usage_statistics.total_processing_time_ms + ?6
                 "#,
-                request.metadata.organization_id,
+                request.metadata.tenant_id,
+                org_id,
                 today,
                 doc_type,
                 format,
@@ -417,13 +429,14 @@ impl WorkerPool {
             sqlx::query!(
                 r#"
                 INSERT INTO usage_statistics
-                    (organization_id, date, document_type, format, failed_count)
-                VALUES ($1, $2, $3, $4, 1)
-                ON CONFLICT (organization_id, date, document_type, format)
+                    (tenant_id, organization_id, date, document_type, format, failed_count)
+                VALUES (?1, ?2, ?3, ?4, ?5, 1)
+                ON CONFLICT (tenant_id, date, document_type, format)
                 DO UPDATE SET
                     failed_count = usage_statistics.failed_count + 1
                 "#,
-                request.metadata.organization_id,
+                request.metadata.tenant_id,
+                org_id,
                 today,
                 doc_type,
                 format
