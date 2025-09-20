@@ -30,9 +30,12 @@ pub enum DocumentType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DocumentMetadata {
+    #[serde(default)]
     pub tenant_id: i64,
+    #[serde(default)]
     pub user_id: i64,
     pub organization_id: Option<String>, // Optional for backward compatibility
+    #[serde(default = "chrono::Utc::now")]
     pub request_time: DateTime<Utc>,
     pub ttl_seconds: Option<i64>,
     pub tags: Option<HashMap<String, String>>,

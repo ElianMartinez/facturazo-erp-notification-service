@@ -263,7 +263,6 @@ impl S3Client {
         let response = request.send().await?;
 
         let keys = response.contents()
-            .unwrap_or_default()
             .iter()
             .filter_map(|obj| obj.key())
             .map(|s| s.to_string())

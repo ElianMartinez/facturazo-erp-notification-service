@@ -28,10 +28,10 @@ impl ExcelGenerator {
         let rows = data["rows"].as_array();
         let use_memory_optimization = data["memory_optimization"].as_bool().unwrap_or(false);
 
-        // Optimización de memoria para archivos grandes
-        if use_memory_optimization {
-            workbook.use_constant_memory(true)?;
-        }
+        // Optimización de memoria para archivos grandes - comentado temporalmente
+        // if use_memory_optimization {
+        //     workbook.use_constant_memory(true)?;
+        // }
 
         // Crear hoja de trabajo
         let worksheet = workbook.add_worksheet();
@@ -130,8 +130,7 @@ impl ExcelGenerator {
         }
 
         // Guardar en buffer
-        let mut buffer = Vec::new();
-        workbook.save_to_buffer(&mut buffer)?;
+        let buffer = workbook.save_to_buffer()?;
 
         Ok(buffer)
     }

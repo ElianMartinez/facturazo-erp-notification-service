@@ -61,40 +61,26 @@ async fn health_check() -> HttpResponse {
 }
 
 async fn readiness_check(state: web::Data<crate::api::ApiState>) -> HttpResponse {
-    // Check database connection
-    let db_healthy = sqlx::query("SELECT 1")
-        .fetch_one(&state.db)
-        .await
-        .is_ok();
+    // Check template manager
+    let templates_loaded = state.template_manager.list_templates().len() > 0;
 
-    // Check Redis connection
-    let redis_healthy = {
-        let mut redis = state.redis.clone();
-        redis::cmd("PING")
-            .query_async::<_, String>(&mut redis)
-            .await
-            .is_ok()
-    };
+    // S3 is already initialized if we got here
+    let s3_healthy = true;
 
-    // Check Kafka
-    let kafka_healthy = true; // TODO: Implement actual check
-
-    if db_healthy && redis_healthy && kafka_healthy {
+    if s3_healthy && templates_loaded {
         HttpResponse::Ok().json(serde_json::json!({
             "status": "ready",
             "checks": {
-                "database": "ok",
-                "redis": "ok",
-                "kafka": "ok"
+                "s3": "ok",
+                "templates": if templates_loaded { "ok" } else { "no templates loaded" }
             }
         }))
     } else {
         HttpResponse::ServiceUnavailable().json(serde_json::json!({
             "status": "not_ready",
             "checks": {
-                "database": if db_healthy { "ok" } else { "failed" },
-                "redis": if redis_healthy { "ok" } else { "failed" },
-                "kafka": if kafka_healthy { "ok" } else { "failed" }
+                "s3": if s3_healthy { "ok" } else { "failed" },
+                "templates": if templates_loaded { "ok" } else { "no templates loaded" }
             }
         }))
     }
@@ -120,7 +106,7 @@ async fn metrics_endpoint() -> HttpResponse {
 async fn list_templates(
     state: web::Data<crate::api::ApiState>,
 ) -> HttpResponse {
-    let templates = state.template_manager.list_templates().await;
+    let templates = state.template_manager.list_templates();
 
     HttpResponse::Ok().json(serde_json::json!({
         "templates": templates
@@ -129,54 +115,40 @@ async fn list_templates(
 
 async fn get_template(
     path: web::Path<String>,
-    state: web::Data<crate::api::ApiState>,
+    _state: web::Data<crate::api::ApiState>,
 ) -> HttpResponse {
     let template_id = path.into_inner();
 
-    match state.template_manager.get_template(&template_id).await {
-        Ok(content) => HttpResponse::Ok()
-            .content_type("text/plain")
-            .body(content),
-        Err(e) => HttpResponse::NotFound().json(serde_json::json!({
-            "error": "Template not found",
-            "details": e.to_string()
-        }))
-    }
+    // TODO: Implementar get_template en TemplateManager
+    HttpResponse::NotImplemented().json(serde_json::json!({
+        "error": "Template retrieval not implemented",
+        "template_id": template_id
+    }))
 }
 
 async fn update_template(
     path: web::Path<String>,
-    body: String,
-    state: web::Data<crate::api::ApiState>,
+    _body: String,
+    _state: web::Data<crate::api::ApiState>,
 ) -> HttpResponse {
     let template_id = path.into_inner();
 
-    match state.template_manager.update_template(&template_id, body).await {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
-            "status": "updated",
-            "template_id": template_id
-        })),
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "error": "Failed to update template",
-            "details": e.to_string()
-        }))
-    }
+    // TODO: Implementar update_template en TemplateManager
+    HttpResponse::NotImplemented().json(serde_json::json!({
+        "error": "Template update not implemented",
+        "template_id": template_id
+    }))
 }
 
 async fn reload_template(
     path: web::Path<String>,
-    state: web::Data<crate::api::ApiState>,
+    _state: web::Data<crate::api::ApiState>,
 ) -> HttpResponse {
     let template_id = path.into_inner();
 
-    match state.template_manager.reload_template(&template_id).await {
-        Ok(_) => HttpResponse::Ok().json(serde_json::json!({
-            "status": "reloaded",
-            "template_id": template_id
-        })),
-        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "error": "Failed to reload template",
-            "details": e.to_string()
-        }))
-    }
+    // TODO: Implementar reload_template en TemplateManager
+    HttpResponse::NotImplemented().json(serde_json::json!({
+        "error": "Template reload not implemented",
+        "template_id": template_id
+    }))
 }

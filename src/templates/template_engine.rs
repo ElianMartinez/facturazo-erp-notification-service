@@ -43,7 +43,7 @@ impl TemplateEngine {
         let typst_content = template.generate(&json_data)?;
 
         // Assets vacíos por ahora (se pueden manejar dentro de cada plantilla si es necesario)
-        let assets = HashMap::new();
+        let _assets: HashMap<String, String> = HashMap::new();
 
         let timestamp = chrono::Utc::now().timestamp();
         let base_filename = output_filename.unwrap_or_else(|| format!("{}_{}", template_id, timestamp));

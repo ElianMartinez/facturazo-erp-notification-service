@@ -2,24 +2,23 @@ use actix_web::{dev::ServiceRequest, Error, HttpMessage};
 use actix_web_httpauth::extractors::bearer::{BearerAuth, Config};
 use actix_web_httpauth::extractors::AuthenticationError;
 use actix_web_httpauth::middleware::HttpAuthentication;
+use std::future::{ready, Ready};
 
-pub type Authentication = HttpAuthentication<BearerAuth, fn(ServiceRequest, BearerAuth) -> Result<ServiceRequest, (Error, ServiceRequest)>>;
-
-pub fn create_auth_middleware() -> Authentication {
+pub fn create_auth_middleware() -> HttpAuthentication<BearerAuth, fn(ServiceRequest, BearerAuth) -> Ready<Result<ServiceRequest, (Error, ServiceRequest)>>> {
     HttpAuthentication::bearer(validator)
 }
 
-async fn validator(
+fn validator(
     req: ServiceRequest,
     credentials: BearerAuth,
-) -> Result<ServiceRequest, (Error, ServiceRequest)> {
+) -> Ready<Result<ServiceRequest, (Error, ServiceRequest)>> {
     // For now, accept any token that starts with "Bearer "
     // In production, validate JWT here
     let token = credentials.token();
 
     if token.is_empty() {
         let config = Config::default();
-        return Err((AuthenticationError::from(config).into(), req));
+        return ready(Err((AuthenticationError::from(config).into(), req)));
     }
 
     // Validate token (simplified for demo)
@@ -50,10 +49,10 @@ async fn validator(
             user_id,
         });
 
-        Ok(req)
+        ready(Ok(req))
     } else {
         let config = Config::default();
-        Err((AuthenticationError::from(config).into(), req))
+        ready(Err((AuthenticationError::from(config).into(), req)))
     }
 }
 

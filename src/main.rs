@@ -1,4 +1,4 @@
-use actix_cors::Cors;
+// use actix_cors::Cors;
 use actix_web::{middleware, web, App, HttpServer};
 use anyhow::Result;
 use document_generator::api::state::AppConfig;
@@ -22,10 +22,11 @@ async fn main() -> Result<()> {
     tracing::info!("Starting Document Generator API");
 
     // Initialize Prometheus metrics
-    let prometheus = Registry::new();
-    prometheus::default_registry().register(Box::new(
-        prometheus::process_collector::ProcessCollector::for_self(),
-    ))?;
+    let _prometheus = Registry::new();
+    // Comentado temporalmente - requiere feature "process" y OS Linux
+    // prometheus::default_registry().register(Box::new(
+    //     prometheus::process_collector::ProcessCollector::for_self(),
+    // ))?;
 
     // Load configuration
     let config = load_config()?;
@@ -73,10 +74,6 @@ fn load_config() -> Result<AppConfig> {
         sync_timeout_ms: env::var("SYNC_TIMEOUT_MS")
             .unwrap_or_else(|_| "5000".to_string())
             .parse()?,
-        kafka_topic_priority: env::var("KAFKA_TOPIC_PRIORITY")
-            .unwrap_or_else(|_| "doc.requests.priority".to_string()),
-        kafka_topic_bulk: env::var("KAFKA_TOPIC_BULK")
-            .unwrap_or_else(|_| "doc.requests.bulk".to_string()),
         s3_bucket_documents: env::var("S3_BUCKET_DOCUMENTS")
             .unwrap_or_else(|_| "documents".to_string()),
         s3_bucket_temp: env::var("S3_BUCKET_TEMP").unwrap_or_else(|_| "temp-uploads".to_string()),

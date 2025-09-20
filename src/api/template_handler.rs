@@ -1,9 +1,9 @@
-use actix_web::{web, HttpResponse, HttpRequest, Result};
+use actix_web::{web, HttpResponse, HttpRequest, Result, HttpMessage};
 use serde_json::json;
 use uuid::Uuid;
 use crate::templates::{TemplateEngine, TemplateData, InvoiceData};
 use super::state::ApiState;
-use super::handlers::{extract_tenant_user, AuthInfo};
+use super::handlers::AuthInfo;
 
 pub async fn generate_pdf_from_template(
     req: HttpRequest,

@@ -66,11 +66,6 @@ impl From<serde_json::Error> for ApiError {
     }
 }
 
-impl From<sqlx::Error> for ApiError {
-    fn from(err: sqlx::Error) -> Self {
-        ApiError::internal_server_error(err.to_string())
-    }
-}
 
 impl From<actix_web::Error> for ApiError {
     fn from(err: actix_web::Error) -> Self {
