@@ -43,6 +43,7 @@ RUN apt-get update && apt-get install -y \
     librdkafka1 \
     libsasl2-2 \
     curl \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Typst from GitHub releases
