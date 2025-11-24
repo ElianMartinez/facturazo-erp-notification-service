@@ -43,9 +43,12 @@ Crear un microservicio robusto de nivel enterprise que maneje la generación de 
 - **Templates**: Sistema de plantillas versionadas y cacheadas
 
 ### 2. Notification System
-- **Email**: SMTP propio con templates HTML
-- **WhatsApp**: EvolutionAPI con mensajes template
-- **In-App**: WebSocket/Server-Sent Events
+- **Email**: SMTP propio con templates HTML ✅ IMPLEMENTADO
+- **WhatsApp**: EvolutionAPI con mensajes template ✅ IMPLEMENTADO
+  - Test Environment: http://5.161.120.166:8080
+  - Instance: FACTURAZO-ERP-DEV
+  - Full Dominican phone validation
+- **In-App**: WebSocket/Server-Sent Events (pendiente)
 - **SMS**: Fallback para WhatsApp (opcional)
 
 ### 3. Storage System
