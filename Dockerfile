@@ -26,8 +26,8 @@ RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     echo "pub fn dummy() {}" > src/lib.rs
 
-# Update cargo registry and fetch dependencies
-RUN cargo update --dry-run && cargo fetch --locked
+# Fetch all dependencies
+RUN cargo fetch --locked
 
 # Build dependencies only (cached layer)
 RUN cargo build --release && rm -rf src target/release/deps/pdf_services*
