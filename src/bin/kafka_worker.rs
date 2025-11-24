@@ -4,7 +4,7 @@
 //! and notification requests from Kafka.
 
 use anyhow::Result;
-use tracing::{error, info};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {

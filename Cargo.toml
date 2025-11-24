@@ -168,7 +168,7 @@ rstest = "0.18"
 criterion = { version = "0.5", features = ["html_reports"] }
 tempfile = "3.8"
 insta = "1.34"
-wiremock = "0.6"
+# wiremock = "0.6"  # Temporarily disabled due to compilation issues
 
 # ============================================
 # Build Dependencies
@@ -235,6 +235,13 @@ path = "src/bin/kafka_worker.rs"
 [lib]
 name = "pdf_services"
 path = "src/lib.rs"
+
+# ============================================
+# Examples
+# ============================================
+[[example]]
+name = "test_whatsapp"
+path = "examples/test_whatsapp.rs"
 
 # ============================================
 # Benchmarks

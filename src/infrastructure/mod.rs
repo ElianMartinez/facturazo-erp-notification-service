@@ -8,7 +8,6 @@ pub mod persistence;
 pub mod observability;
 
 use anyhow::Result;
-use std::sync::Arc;
 
 /// Infrastructure container
 pub struct Infrastructure {

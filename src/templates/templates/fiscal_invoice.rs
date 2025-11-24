@@ -1,5 +1,4 @@
 use anyhow::{Result, Context};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use crate::templates::template_trait::{TypstTemplate, utils};
 use crate::templates::template_models::{InvoiceData, InvoiceItem};

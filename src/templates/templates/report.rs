@@ -1,7 +1,7 @@
 use anyhow::{Result, Context};
 use serde_json::Value;
 use crate::templates::template_trait::{TypstTemplate, utils};
-use crate::templates::template_models::{ReportData, ChartData};
+use crate::templates::template_models::ReportData;
 
 pub struct ReportTemplate;
 

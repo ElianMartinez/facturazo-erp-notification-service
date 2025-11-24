@@ -3,7 +3,7 @@
 //! Orchestrators coordinate complex workflows between multiple services
 
 use anyhow::Result;
-use tracing::{info, error};
+use tracing::info;
 
 /// Document generation orchestrator
 pub struct DocumentOrchestrator {

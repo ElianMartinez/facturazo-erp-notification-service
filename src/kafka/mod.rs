@@ -5,9 +5,9 @@
 use anyhow::Result;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::info;
 
 pub mod consumer;
 pub mod producer;
