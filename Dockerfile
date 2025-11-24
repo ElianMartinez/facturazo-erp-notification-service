@@ -27,7 +27,6 @@ RUN cargo build --release && rm -rf src target/release/deps/pdf_services*
 
 # Copy actual source code
 COPY src ./src
-COPY templates ./templates
 
 # Build the actual application
 RUN cargo build --release --bin api --bin kafka-worker
@@ -51,9 +50,6 @@ WORKDIR /app
 # Copy binaries from builder
 COPY --from=builder /app/target/release/api /app/api
 COPY --from=builder /app/target/release/kafka-worker /app/kafka-worker
-
-# Copy templates
-COPY templates /app/templates
 
 # Create non-root user
 RUN useradd -r -s /bin/false appuser && \
