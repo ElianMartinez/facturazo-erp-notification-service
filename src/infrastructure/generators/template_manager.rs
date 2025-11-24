@@ -6,27 +6,31 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+use parking_lot::RwLock;
 
 /// Template manager for document generation
 pub struct TemplateManager {
     template_dir: PathBuf,
-    cache: HashMap<String, CachedTemplate>,
+    cache: RwLock<HashMap<String, CachedTemplate>>,
 }
 
 impl TemplateManager {
     pub fn new(template_dir: PathBuf) -> Self {
         Self {
             template_dir,
-            cache: HashMap::new(),
+            cache: RwLock::new(HashMap::new()),
         }
     }
 
-    /// Get template by name
-    pub async fn get_template(&mut self, name: &str) -> Result<String> {
+    /// Get template by name (thread-safe)
+    pub async fn get_template(&self, name: &str) -> Result<String> {
         // Check cache first
-        if let Some(cached) = self.cache.get(name) {
-            if !cached.is_expired() {
-                return Ok(cached.content.clone());
+        {
+            let cache = self.cache.read();
+            if let Some(cached) = cache.get(name) {
+                if !cached.is_expired() {
+                    return Ok(cached.content.clone());
+                }
             }
         }
 
@@ -34,10 +38,13 @@ impl TemplateManager {
         let template = self.load_template_from_disk(name).await?;
 
         // Update cache
-        self.cache.insert(
-            name.to_string(),
-            CachedTemplate::new(template.clone())
-        );
+        {
+            let mut cache = self.cache.write();
+            cache.insert(
+                name.to_string(),
+                CachedTemplate::new(template.clone())
+            );
+        }
 
         Ok(template)
     }
@@ -76,7 +83,7 @@ impl TemplateManager {
     }
 
     /// Save template to disk
-    pub async fn save_template(&mut self, name: &str, content: &str) -> Result<()> {
+    pub async fn save_template(&self, name: &str, content: &str) -> Result<()> {
         let file_path = self.template_dir
             .join(format!("{}.typ", name));
 
@@ -87,10 +94,13 @@ impl TemplateManager {
         fs::write(&file_path, content).await?;
 
         // Update cache
-        self.cache.insert(
-            name.to_string(),
-            CachedTemplate::new(content.to_string())
-        );
+        {
+            let mut cache = self.cache.write();
+            cache.insert(
+                name.to_string(),
+                CachedTemplate::new(content.to_string())
+            );
+        }
 
         Ok(())
     }
@@ -144,15 +154,17 @@ impl TemplateManager {
     }
 
     /// Clear cache
-    pub fn clear_cache(&mut self) {
-        self.cache.clear();
+    pub fn clear_cache(&self) {
+        let mut cache = self.cache.write();
+        cache.clear();
     }
 
     /// Get cache statistics
     pub fn cache_stats(&self) -> CacheStats {
+        let cache = self.cache.read();
         CacheStats {
-            templates_cached: self.cache.len(),
-            total_size: self.cache.values()
+            templates_cached: cache.len(),
+            total_size: cache.values()
                 .map(|t| t.content.len())
                 .sum(),
         }
@@ -211,7 +223,12 @@ pub struct TemplateVersion {
 
 impl TemplateVersion {
     pub fn new(content: &str, created_by: Option<String>, description: Option<String>) -> Self {
-        let content_hash = format!("{:x}", md5::compute(content));
+        use ring::digest;
+        use base64::Engine;
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
+        let hash = digest::digest(&digest::SHA256, content.as_bytes());
+        let content_hash = URL_SAFE_NO_PAD.encode(hash.as_ref());
 
         Self {
             version: Self::generate_version(),
@@ -269,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn test_template_manager() {
         let temp_dir = TempDir::new().unwrap();
-        let mut manager = TemplateManager::new(temp_dir.path().to_path_buf());
+        let manager = TemplateManager::new(temp_dir.path().to_path_buf());
 
         // Save a template
         manager.save_template("test", "Test template content").await.unwrap();
@@ -300,6 +317,6 @@ mod tests {
         );
 
         assert!(version.version.starts_with("v"));
-        assert_eq!(version.content_hash.len(), 32); // MD5 hash length
+        assert!(!version.content_hash.is_empty()); // SHA256 base64 encoded
     }
 }

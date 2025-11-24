@@ -12,6 +12,9 @@ use tracing::info;
 pub mod consumer;
 pub mod producer;
 pub mod handlers;
+pub mod admin;
+
+pub use admin::{KafkaAdmin, TopicConfig, TopicInfo, ClusterInfo};
 
 /// Kafka client wrapper
 pub struct KafkaClient {

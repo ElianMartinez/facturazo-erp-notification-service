@@ -1,153 +1,412 @@
-# Arquitectura del Sistema de Generación de Documentos
+# Arquitectura - PDF Services v2.0
 
-## Estructura del Proyecto
+## Visión General
+
+```
+                              ┌──────────────────────────────────────┐
+                              │           CLIENTS                     │
+                              │   (Web, Mobile, External Services)    │
+                              └─────────────┬────────────────────────┘
+                                            │
+                    ┌───────────────────────┼───────────────────────┐
+                    │                       │                       │
+                    ▼                       ▼                       ▼
+            ┌───────────────┐      ┌───────────────┐      ┌───────────────┐
+            │   HTTP API    │      │    Kafka      │      │   Webhooks    │
+            │   (Sync)      │      │   (Async)     │      │   (Events)    │
+            │   :8080       │      │   :9092       │      │               │
+            └───────┬───────┘      └───────┬───────┘      └───────┬───────┘
+                    │                      │                      │
+                    └──────────────────────┼──────────────────────┘
+                                           │
+                                           ▼
+                    ┌──────────────────────────────────────────────┐
+                    │              PDF-SERVICES v2.0               │
+                    │                                              │
+                    │  ┌────────────────────────────────────────┐  │
+                    │  │           API LAYER                    │  │
+                    │  │  • handlers.rs    • routes.rs          │  │
+                    │  │  • middleware/    • state.rs           │  │
+                    │  └────────────────────────────────────────┘  │
+                    │                      │                       │
+                    │  ┌────────────────────────────────────────┐  │
+                    │  │        APPLICATION LAYER               │  │
+                    │  │  • commands/      • queries/           │  │
+                    │  │  • orchestrators/                      │  │
+                    │  └────────────────────────────────────────┘  │
+                    │                      │                       │
+                    │  ┌────────────────────────────────────────┐  │
+                    │  │          DOMAIN LAYER                  │  │
+                    │  │  • document/      • invoice/           │  │
+                    │  │  • notification/  • fiscal/            │  │
+                    │  └────────────────────────────────────────┘  │
+                    │                      │                       │
+                    │  ┌────────────────────────────────────────┐  │
+                    │  │       INFRASTRUCTURE LAYER             │  │
+                    │  │  • generators/    • notifications/     │  │
+                    │  │  • database/      • cache/             │  │
+                    │  │  • storage.rs                          │  │
+                    │  └────────────────────────────────────────┘  │
+                    │                                              │
+                    └──────────────────────────────────────────────┘
+                                           │
+                    ┌──────────────────────┼──────────────────────┐
+                    │                      │                      │
+                    ▼                      ▼                      ▼
+            ┌───────────────┐      ┌───────────────┐      ┌───────────────┐
+            │    SQLite     │      │  Cloudflare   │      │  EvolutionAPI │
+            │   (Metadata)  │      │      R2       │      │  (WhatsApp)   │
+            └───────────────┘      │   (Storage)   │      └───────────────┘
+                                   └───────────────┘
+                                          │
+                                          ▼
+                                   ┌───────────────┐
+                                   │     SMTP      │
+                                   │   (Email)     │
+                                   └───────────────┘
+```
+
+---
+
+## Estructura de Directorios
 
 ```
 pdf-services/
 ├── src/
-│   ├── api/                    # API REST con Actix-web
-│   │   ├── handlers.rs         # Manejadores de endpoints
-│   │   ├── middleware/         # Middleware de autenticación y compresión
-│   │   ├── routes.rs           # Definición de rutas
-│   │   ├── state.rs            # Estado compartido de la API
-│   │   └── template_handler.rs # Manejador específico para templates
+│   ├── api/                          # REST API Layer
+│   │   ├── handlers.rs               # Request handlers
+│   │   ├── routes.rs                 # Route definitions
+│   │   ├── state.rs                  # AppState compartido
+│   │   ├── error.rs                  # Error handling
+│   │   ├── template_handler.rs       # Template endpoints
+│   │   └── middleware/
+│   │       ├── auth.rs               # JWT authentication
+│   │       └── compression.rs        # Response compression
 │   │
-│   ├── generators/             # Generadores de documentos
-│   │   ├── pdf.rs              # Generador de PDFs con Typst
-│   │   └── excel.rs            # Generador de Excel con rust_xlsxwriter
+│   ├── application/                  # Application Layer (Use Cases)
+│   │   ├── commands/                 # Write operations
+│   │   │   └── mod.rs
+│   │   ├── queries/                  # Read operations
+│   │   │   └── mod.rs
+│   │   └── orchestrators/            # Workflow coordination
+│   │       └── mod.rs
 │   │
-│   ├── models/                 # Modelos de datos
-│   │   ├── document.rs         # Modelo de documento genérico
-│   │   ├── invoice.rs          # Modelo de factura
-│   │   ├── report.rs           # Modelo de reporte
-│   │   └── common.rs           # Tipos comunes compartidos
+│   ├── domain/                       # Domain Layer (Business Logic)
+│   │   ├── document/                 # Document aggregate
+│   │   │   └── mod.rs
+│   │   ├── invoice/                  # Invoice aggregate
+│   │   │   └── mod.rs
+│   │   ├── fiscal/                   # Fiscal rules (RD)
+│   │   │   └── mod.rs
+│   │   ├── notification/             # Notification aggregate
+│   │   │   └── mod.rs
+│   │   └── shared/                   # Shared value objects
+│   │       └── mod.rs
 │   │
-│   ├── storage/                # Almacenamiento en la nube
-│   │   └── s3.rs               # Cliente S3 para almacenamiento
+│   ├── infrastructure/               # Infrastructure Layer
+│   │   ├── cache/                    # In-memory caching
+│   │   │   └── mod.rs
+│   │   ├── database/                 # SQLite repositories
+│   │   │   ├── document_repository.rs
+│   │   │   ├── invoice_repository.rs
+│   │   │   ├── ncf_sequence_repository.rs
+│   │   │   └── notification_repository.rs
+│   │   ├── generators/               # Document generators
+│   │   │   ├── typst_generator.rs    # PDF via Typst
+│   │   │   ├── invoice_generator.rs  # Fiscal invoices
+│   │   │   ├── report_generator.rs   # Reports
+│   │   │   ├── excel_generator.rs    # XLSX files
+│   │   │   ├── csv_generator.rs      # CSV export
+│   │   │   ├── qr_generator.rs       # QR codes
+│   │   │   ├── quotation_generator.rs
+│   │   │   └── template_manager.rs   # Template versioning
+│   │   ├── notifications/            # Notification services
+│   │   │   ├── email.rs              # SMTP client
+│   │   │   └── evolution_api.rs      # WhatsApp via EvolutionAPI
+│   │   ├── storage.rs                # S3/R2 storage
+│   │   ├── observability.rs          # Metrics & tracing
+│   │   └── persistence.rs            # Persistence abstractions
 │   │
-│   ├── templates/              # Sistema de plantillas dinámicas
-│   │   ├── template_engine.rs  # Motor de procesamiento de templates
-│   │   ├── template_models.rs  # Modelos de datos para templates
-│   │   ├── template_trait.rs   # Trait base y registro de templates
-│   │   └── templates/          # Plantillas dinámicas en Rust
-│   │       ├── fiscal_invoice.rs   # Factura fiscal electrónica
-│   │       ├── simple_invoice.rs   # Factura simple
-│   │       ├── receipt.rs          # Recibo de pago
-│   │       └── report.rs           # Reporte genérico
+│   ├── kafka/                        # Message Bus
+│   │   ├── consumer.rs               # Kafka consumer
+│   │   ├── producer.rs               # Kafka producer
+│   │   └── handlers.rs               # Message handlers
 │   │
-│   ├── main.rs                 # Entrada principal (API server)
-│   ├── worker.rs               # Worker para procesamiento asíncrono
-│   └── lib.rs                  # Biblioteca principal
+│   ├── templates/                    # Typst Templates
+│   │   ├── template_engine.rs
+│   │   ├── template_models.rs
+│   │   ├── template_trait.rs
+│   │   └── templates/
+│   │       ├── fiscal_invoice.rs     # Factura fiscal RD
+│   │       ├── simple_invoice.rs     # Factura simple
+│   │       ├── receipt.rs            # Recibo
+│   │       ├── report.rs             # Reportes
+│   │       └── quotation.rs          # Cotizaciones
+│   │
+│   ├── bin/                          # Executables
+│   │   ├── pdf_services.rs           # Main API server
+│   │   ├── kafka_worker.rs           # Async worker
+│   │   ├── benchmark_report.rs       # Benchmarking tool
+│   │   └── quotation_generator.rs    # Quotation tool
+│   │
+│   ├── config/                       # Configuration
+│   │   └── mod.rs
+│   │
+│   ├── common/                       # Shared utilities
+│   │   ├── middleware.rs
+│   │   ├── security.rs
+│   │   └── utils.rs
+│   │
+│   ├── models/                       # Data models (legacy)
+│   │   ├── document.rs
+│   │   ├── invoice.rs
+│   │   ├── report.rs
+│   │   └── common.rs
+│   │
+│   ├── generators/                   # Legacy generators
+│   │   ├── pdf.rs
+│   │   └── excel.rs
+│   │
+│   ├── storage/                      # Legacy storage
+│   │   └── s3.rs
+│   │
+│   ├── lib.rs
+│   └── main.rs
 │
-├── output/                     # PDFs generados (gitignored)
-├── facturas/                   # Facturas generadas (gitignored)
-├── Cargo.toml                  # Dependencias de Rust
-├── .env                        # Variables de entorno (gitignored)
-└── README.md                   # Documentación principal
+├── tests/
+│   └── integration_tests.rs
+│
+├── docs/
+│   ├── ARCHITECTURE.md
+│   ├── PROJECT_CONTEXT.md
+│   ├── IMPLEMENTATION_ROADMAP.md
+│   └── CURRENT_SESSION.md
+│
+├── Cargo.toml
+├── Cargo.lock
+└── .env.example
 ```
+
+---
+
+## Flujo de Datos
+
+### Generación Síncrona (HTTP)
+
+```
+Client                API                  Orchestrator            Generator           Storage
+  │                    │                       │                       │                  │
+  │  POST /generate    │                       │                       │                  │
+  │───────────────────>│                       │                       │                  │
+  │                    │  GenerateDocument     │                       │                  │
+  │                    │──────────────────────>│                       │                  │
+  │                    │                       │  Generate PDF         │                  │
+  │                    │                       │──────────────────────>│                  │
+  │                    │                       │                       │                  │
+  │                    │                       │      PDF bytes        │                  │
+  │                    │                       │<──────────────────────│                  │
+  │                    │                       │                       │                  │
+  │                    │                       │  Upload to R2                            │
+  │                    │                       │─────────────────────────────────────────>│
+  │                    │                       │                                          │
+  │                    │                       │      Signed URL                          │
+  │                    │                       │<─────────────────────────────────────────│
+  │                    │                       │                       │                  │
+  │                    │   Document URL        │                       │                  │
+  │                    │<──────────────────────│                       │                  │
+  │                    │                       │                       │                  │
+  │   { url: "..." }   │                       │                       │                  │
+  │<───────────────────│                       │                       │                  │
+```
+
+### Generación Asíncrona (Kafka)
+
+```
+Producer              Kafka                Consumer            Orchestrator          Notification
+  │                    │                       │                    │                     │
+  │  document-request  │                       │                    │                     │
+  │───────────────────>│                       │                    │                     │
+  │                    │  Consume message      │                    │                     │
+  │                    │──────────────────────>│                    │                     │
+  │                    │                       │  Process           │                     │
+  │                    │                       │───────────────────>│                     │
+  │                    │                       │                    │                     │
+  │                    │                       │                    │  (generate PDF...)  │
+  │                    │                       │                    │                     │
+  │                    │                       │  Send notification │                     │
+  │                    │                       │                    │────────────────────>│
+  │                    │                       │                    │                     │
+  │                    │  document-generated   │                    │                     │
+  │                    │<──────────────────────│                    │                     │
+```
+
+---
 
 ## Componentes Principales
 
-### 1. API REST (`src/api/`)
-- **Servidor HTTP**: Actix-web
-- **Autenticación**: JWT con middleware personalizado
-- **Rate Limiting**: Governor con límites por tenant/usuario
-- **Endpoints principales**:
-  - `POST /api/v1/generate/sync` - Generación síncrona
-  - `POST /api/v1/generate/async` - Generación asíncrona
-  - `GET /api/v1/documents/{id}` - Estado del documento
-  - `POST /api/v1/templates/generate` - Generación con templates
+### 1. API Layer (`src/api/`)
 
-### 2. Generadores (`src/generators/`)
-- **PDF Generator**: Genera PDFs usando Typst como motor
-- **Excel Generator**: Genera archivos Excel con rust_xlsxwriter
-- Soporte para compresión (Gzip, Zstd)
-- Generación de códigos QR para facturas fiscales
+| Archivo | Responsabilidad |
+|---------|-----------------|
+| `handlers.rs` | Request/Response handling |
+| `routes.rs` | Route configuration |
+| `state.rs` | Shared application state |
+| `error.rs` | Error responses |
+| `middleware/auth.rs` | JWT validation |
+| `middleware/compression.rs` | Gzip/Zstd compression |
 
-### 3. Sistema de Templates (`src/templates/`)
-- **Templates Dinámicos**: Cada plantilla es un módulo Rust
-- **Sin archivos .typ externos**: Todo el contenido se genera en código
-- **Plantillas disponibles**:
-  - Factura Fiscal Electrónica (República Dominicana)
-  - Factura Simple
-  - Recibo de Pago
-  - Reporte con tablas y gráficos
+### 2. Application Layer (`src/application/`)
 
-### 4. Almacenamiento (`src/storage/`)
-- **S3 Compatible**: MinIO, AWS S3, DigitalOcean Spaces
-- **Multipart Upload**: Para archivos grandes
-- **URLs firmadas**: Acceso temporal seguro
+| Módulo | Responsabilidad |
+|--------|-----------------|
+| `commands/` | Write operations (generate, send) |
+| `queries/` | Read operations (status, list) |
+| `orchestrators/` | Complex workflows |
 
-### 5. Procesamiento Asíncrono
-- **Kafka**: Cola de mensajes para trabajos pesados
-- **Worker**: Procesa documentos en background
-- **Redis**: Cache y estado compartido
+### 3. Domain Layer (`src/domain/`)
 
-## Flujo de Generación de Documentos
+| Módulo | Responsabilidad |
+|--------|-----------------|
+| `document/` | Document entities & rules |
+| `invoice/` | Invoice business logic |
+| `fiscal/` | RD fiscal compliance |
+| `notification/` | Notification entities |
+| `shared/` | Common value objects |
 
-1. **Request llega a la API** → Validación y autenticación
-2. **Verificación de Rate Limit** → Por tenant y usuario
-3. **Decisión Sync/Async**:
-   - **Sync** (< 1MB): Genera y retorna inmediatamente
-   - **Async** (> 1MB): Envía a Kafka, retorna ID
-4. **Generación**:
-   - Selecciona plantilla según tipo
-   - Genera contenido Typst dinámicamente
-   - Compila a PDF con comando `typst`
-5. **Almacenamiento**: S3 con URL firmada
-6. **Respuesta**: URL del documento o ID para polling
+### 4. Infrastructure Layer (`src/infrastructure/`)
 
-## Tecnologías Clave
+| Módulo | Responsabilidad |
+|--------|-----------------|
+| `generators/` | PDF, Excel, CSV, QR generation |
+| `notifications/` | Email (SMTP), WhatsApp (EvolutionAPI) |
+| `database/` | SQLite repositories |
+| `cache/` | In-memory caching |
+| `storage.rs` | S3/R2 file storage |
 
-- **Rust**: Lenguaje principal
-- **Actix-web**: Framework web async
-- **Typst**: Motor de composición tipográfica para PDFs
-- **SQLx**: Acceso a base de datos (SQLite/PostgreSQL)
-- **Redis**: Cache distribuido
-- **Kafka**: Cola de mensajes
-- **S3**: Almacenamiento de objetos
+### 5. Kafka Integration (`src/kafka/`)
 
-## Agregar Nueva Plantilla
+| Archivo | Responsabilidad |
+|---------|-----------------|
+| `consumer.rs` | Message consumption |
+| `producer.rs` | Event publishing |
+| `handlers.rs` | Message routing |
 
-1. Crear archivo en `src/templates/templates/nueva_plantilla.rs`
-2. Implementar el trait `TypstTemplate`:
+---
+
+## Generadores de Documentos
+
+| Generador | Motor | Formato | Uso |
+|-----------|-------|---------|-----|
+| `typst_generator.rs` | Typst CLI | PDF | Base para todos los PDFs |
+| `invoice_generator.rs` | Typst | PDF | Facturas fiscales RD |
+| `report_generator.rs` | Typst | PDF | Reportes tabulares |
+| `excel_generator.rs` | rust_xlsxwriter | XLSX | Hojas de cálculo |
+| `csv_generator.rs` | std | CSV | Exportación masiva |
+| `qr_generator.rs` | qrcode | PNG/Base64 | Códigos QR fiscales |
+| `quotation_generator.rs` | Typst | PDF | Cotizaciones |
+
+---
+
+## Templates Typst
+
 ```rust
-pub struct MiPlantilla;
-
-impl TypstTemplate for MiPlantilla {
-    fn generate(&self, data: &Value) -> Result<String> { ... }
-    fn template_id(&self) -> &str { "mi_plantilla" }
-    fn validate(&self, data: &Value) -> Result<()> { ... }
+// Trait que implementan todos los templates
+pub trait TypstTemplate {
+    fn generate(&self, data: &Value) -> Result<String>;
+    fn template_id(&self) -> &str;
+    fn validate(&self, data: &Value) -> Result<()>;
 }
 ```
-3. Registrar en `src/templates/template_trait.rs`
-4. ¡Listo! Ya está disponible para usar
 
-## Variables de Entorno
+| Template | ID | Descripción |
+|----------|-----|-------------|
+| `fiscal_invoice.rs` | `fiscal_invoice` | Factura fiscal RD (NCF) |
+| `simple_invoice.rs` | `simple_invoice` | Factura simple |
+| `receipt.rs` | `receipt` | Recibo de pago |
+| `report.rs` | `report` | Reportes genéricos |
+| `quotation.rs` | `quotation` | Cotizaciones |
 
-```env
-DATABASE_URL=sqlite://data/documents.db
-REDIS_URL=redis://127.0.0.1:6379
-KAFKA_BROKERS=127.0.0.1:9092
-S3_ENDPOINT=http://127.0.0.1:9000
-S3_BUCKET=documents
-API_PORT=8080
-RATE_LIMIT_REQUESTS=100
-RATE_LIMIT_WINDOW_SECS=60
+---
+
+## Dependencias Clave
+
+```toml
+[dependencies]
+# Web Framework
+actix-web = "4"
+actix-rt = "2"
+
+# Async Runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio"] }
+
+# Kafka
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+
+# Storage
+aws-sdk-s3 = "1"
+
+# Document Generation
+rust_xlsxwriter = "0.64"
+qrcode = "0.14"
+image = "0.25"
+
+# Notifications
+lettre = "0.11"  # SMTP
+reqwest = "0.11" # HTTP client for EvolutionAPI
+
+# Caching
+dashmap = "5"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = "0.3"
 ```
 
-## Comandos Útiles
+---
+
+## Comandos de Ejecución
 
 ```bash
-# Compilar en modo release
+# API Server (HTTP :8080)
+cargo run --bin pdf-services
+
+# Kafka Worker (Async processing)
+cargo run --bin kafka_worker
+
+# Benchmark Tool
+cargo run --bin benchmark-report
+
+# Tests
+cargo test --lib
+
+# Build Release
 cargo build --release
-
-# Ejecutar API
-cargo run --bin api
-
-# Ejecutar worker
-cargo run --bin worker
-
-# Generar PDF con Typst
-typst compile archivo.typ archivo.pdf
 ```
+
+---
+
+## Tests
+
+21 tests unitarios cubriendo:
+
+- **Cache**: Operaciones básicas, TTL, manager
+- **Generators**: Typst, Invoice, Report, Excel, CSV, QR
+- **Templates**: Manager, versioning
+- **Notifications**: Phone validation (RD)
+- **Kafka**: Message parsing, handlers
+
+```bash
+cargo test --lib 2>&1 | grep "test result"
+# test result: ok. 21 passed; 0 failed
+```
+
+---
+
+*Última actualización: 2024-11-24*

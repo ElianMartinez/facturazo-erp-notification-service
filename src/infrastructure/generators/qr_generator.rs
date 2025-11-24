@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use qrcode::{QrCode, EcLevel};
-use image::{ImageBuffer, Luma};
+use qrcode::render::svg;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use serde::{Serialize, Deserialize};
@@ -11,7 +11,7 @@ use serde::{Serialize, Deserialize};
 pub struct QRGenerator;
 
 impl QRGenerator {
-    /// Generate QR code for fiscal invoice
+    /// Generate QR code for fiscal invoice as SVG
     pub fn generate_fiscal_qr(data: &FiscalQRData) -> Result<Vec<u8>> {
         // Create QR data string according to DGII format
         let qr_content = Self::format_fiscal_data(data);
@@ -19,20 +19,13 @@ impl QRGenerator {
         // Generate QR code
         let code = QrCode::with_error_correction_level(&qr_content, EcLevel::M)?;
 
-        // Render to image
-        let image = code.render::<Luma<u8>>()
+        // Render to SVG (more portable and doesn't require image crate compatibility)
+        let svg = code.render::<svg::Color>()
             .min_dimensions(200, 200)
             .max_dimensions(400, 400)
             .build();
 
-        // Convert to PNG bytes
-        let mut png_bytes = Vec::new();
-        image.write_to(
-            &mut std::io::Cursor::new(&mut png_bytes),
-            image::ImageOutputFormat::Png
-        )?;
-
-        Ok(png_bytes)
+        Ok(svg.into_bytes())
     }
 
     /// Generate QR code as base64 string
@@ -64,22 +57,16 @@ impl QRGenerator {
         )
     }
 
-    /// Generate generic QR code
+    /// Generate generic QR code as SVG
     pub fn generate_qr(content: &str) -> Result<Vec<u8>> {
         let code = QrCode::new(content)?;
 
-        let image = code.render::<Luma<u8>>()
+        let svg = code.render::<svg::Color>()
             .min_dimensions(200, 200)
             .max_dimensions(400, 400)
             .build();
 
-        let mut png_bytes = Vec::new();
-        image.write_to(
-            &mut std::io::Cursor::new(&mut png_bytes),
-            image::ImageOutputFormat::Png
-        )?;
-
-        Ok(png_bytes)
+        Ok(svg.into_bytes())
     }
 
     /// Generate payment QR code
@@ -135,7 +122,6 @@ impl Default for QROptions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
 
     #[test]
     fn test_fiscal_qr_generation() {
@@ -150,8 +136,9 @@ mod tests {
         let qr_bytes = QRGenerator::generate_fiscal_qr(&data).unwrap();
         assert!(!qr_bytes.is_empty());
 
-        // Check PNG header
-        assert_eq!(&qr_bytes[1..4], b"PNG");
+        // Check SVG header
+        let svg_str = String::from_utf8(qr_bytes).unwrap();
+        assert!(svg_str.contains("<svg"));
     }
 
     #[test]
@@ -165,7 +152,7 @@ mod tests {
         };
 
         let base64_qr = QRGenerator::generate_fiscal_qr_base64(&data).unwrap();
-        assert!(base64_qr.starts_with("iVBOR")); // PNG base64 signature
+        assert!(!base64_qr.is_empty());
     }
 
     #[test]

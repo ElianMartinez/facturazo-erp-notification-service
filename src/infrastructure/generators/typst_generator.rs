@@ -94,9 +94,32 @@ impl TypstGenerator {
 pub mod helpers {
     use chrono::{DateTime, Utc};
 
+    /// Format number with thousands separator
+    pub fn format_number(amount: f64, decimals: usize) -> String {
+        let formatted = format!("{:.prec$}", amount, prec = decimals);
+        let parts: Vec<&str> = formatted.split('.').collect();
+        let integer_part = parts[0];
+        let decimal_part = parts.get(1);
+
+        let mut result = String::new();
+        let chars: Vec<char> = integer_part.chars().rev().collect();
+        for (i, ch) in chars.iter().enumerate() {
+            if i > 0 && i % 3 == 0 {
+                result.push(',');
+            }
+            result.push(*ch);
+        }
+        let integer_formatted: String = result.chars().rev().collect();
+
+        match decimal_part {
+            Some(dec) => format!("{}.{}", integer_formatted, dec),
+            None => integer_formatted,
+        }
+    }
+
     /// Format currency with Dominican peso symbol
     pub fn format_currency(amount: f64) -> String {
-        format!("RD$ {:,.2}", amount)
+        format!("RD$ {}", format_number(amount, 2))
     }
 
     /// Format date for Dominican Republic
@@ -112,11 +135,11 @@ pub mod helpers {
     /// Format NCF with proper grouping
     pub fn format_ncf(ncf: &str) -> String {
         if ncf.len() == 11 {
-            format!("{}{}{}-{}",
-                &ncf[0..1],   // Serie
-                &ncf[1..3],   // Tipo
-                &ncf[3..7],   // First group
-                &ncf[7..11]   // Second group
+            format!("{}{}-{}-{}",
+                &ncf[0..1],   // Serie (E)
+                &ncf[1..3],   // Tipo (31)
+                &ncf[3..7],   // First group (0000)
+                &ncf[7..11]   // Second group (0001)
             )
         } else {
             ncf.to_string()
@@ -198,6 +221,7 @@ This is a test document generated with Typst.
 
     #[test]
     fn test_helpers() {
+        assert_eq!(helpers::format_number(1500.50, 2), "1,500.50");
         assert_eq!(helpers::format_currency(1500.50), "RD$ 1,500.50");
         assert_eq!(helpers::format_ncf("E3100000001"), "E31-0000-0001");
         assert_eq!(helpers::format_rnc("101123456"), "1-01-12345-6");

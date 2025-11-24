@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde_json::Value;
 use std::path::PathBuf;
 use super::{DocumentGenerator, DocumentType, TypstGenerator};
+use super::typst_generator::helpers::format_number;
 
 /// Invoice PDF generator
 pub struct InvoiceGenerator {
@@ -19,7 +20,7 @@ impl InvoiceGenerator {
 
     /// Generate invoice-specific Typst template
     fn create_invoice_template() -> &'static str {
-        r#"
+        r##"
 #set page(
   paper: "us-letter",
   margin: (top: 1.5cm, bottom: 1.5cm, left: 1.5cm, right: 1.5cm),
@@ -189,7 +190,7 @@ impl InvoiceGenerator {
   ]
 ]
 {{/if}}
-        "#
+        "##
     }
 }
 
@@ -204,17 +205,17 @@ impl DocumentGenerator for InvoiceGenerator {
             // Format currency values
             if let Some(subtotal) = obj.get("subtotal").and_then(|v| v.as_f64()) {
                 obj.insert("subtotal".to_string(),
-                    serde_json::json!(format!("{:,.2}", subtotal)));
+                    serde_json::json!(format_number(subtotal, 2)));
             }
 
             if let Some(total) = obj.get("total_amount").and_then(|v| v.as_f64()) {
                 obj.insert("total_amount".to_string(),
-                    serde_json::json!(format!("{:,.2}", total)));
+                    serde_json::json!(format_number(total, 2)));
             }
 
             if let Some(itbis) = obj.get("itbis_amount").and_then(|v| v.as_f64()) {
                 obj.insert("itbis_amount".to_string(),
-                    serde_json::json!(format!("{:,.2}", itbis)));
+                    serde_json::json!(format_number(itbis, 2)));
             }
 
             // Format dates
@@ -232,17 +233,17 @@ impl DocumentGenerator for InvoiceGenerator {
                         // Format item amounts
                         if let Some(price) = item_obj.get("unit_price").and_then(|v| v.as_f64()) {
                             item_obj.insert("unit_price".to_string(),
-                                serde_json::json!(format!("{:,.2}", price)));
+                                serde_json::json!(format_number(price, 2)));
                         }
 
                         if let Some(total) = item_obj.get("total").and_then(|v| v.as_f64()) {
                             item_obj.insert("total".to_string(),
-                                serde_json::json!(format!("{:,.2}", total)));
+                                serde_json::json!(format_number(total, 2)));
                         }
 
                         if let Some(itbis) = item_obj.get("itbis_amount").and_then(|v| v.as_f64()) {
                             item_obj.insert("itbis_amount".to_string(),
-                                serde_json::json!(format!("{:,.2}", itbis)));
+                                serde_json::json!(format_number(itbis, 2)));
                         }
                     }
                 }

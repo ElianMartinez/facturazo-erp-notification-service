@@ -79,16 +79,36 @@ pub struct MessageContent {
     pub conversation: String,
 }
 
-/// Response from EvolutionAPI
+/// Response from EvolutionAPI for successful message send
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EvolutionAPIResponse {
-    pub success: bool,
+    pub key: MessageKeyResponse,
     #[serde(default)]
-    pub message: Option<String>,
+    pub message_type: Option<String>,
     #[serde(default)]
+    pub message_timestamp: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MessageKeyResponse {
+    pub remote_jid: String,
+    pub from_me: bool,
+    pub id: String,
+}
+
+/// Error response from EvolutionAPI
+#[derive(Debug, Deserialize)]
+pub struct EvolutionAPIErrorResponse {
+    pub status: Option<u16>,
     pub error: Option<String>,
-    #[serde(default)]
-    pub message_id: Option<String>,
+    pub response: Option<ErrorDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ErrorDetail {
+    pub message: Option<String>,
 }
 
 impl EvolutionAPIClient {
@@ -127,19 +147,21 @@ impl EvolutionAPIClient {
 
         if !status.is_success() {
             error!("EvolutionAPI error: {} - {}", status, body);
+            // Try to parse error response
+            if let Ok(err_response) = serde_json::from_str::<EvolutionAPIErrorResponse>(&body) {
+                let msg = err_response.response
+                    .and_then(|r| r.message)
+                    .or(err_response.error)
+                    .unwrap_or_else(|| body.clone());
+                anyhow::bail!("Failed to send WhatsApp message: {}", msg);
+            }
             anyhow::bail!("Failed to send WhatsApp message: {}", body);
         }
 
         let api_response: EvolutionAPIResponse = serde_json::from_str(&body)
             .context("Failed to parse EvolutionAPI response")?;
 
-        if !api_response.success {
-            let error_msg = api_response.error.unwrap_or_else(|| "Unknown error".to_string());
-            anyhow::bail!("EvolutionAPI error: {}", error_msg);
-        }
-
-        let message_id = api_response.message_id
-            .unwrap_or_else(|| "no-id".to_string());
+        let message_id = api_response.key.id;
 
         info!("WhatsApp message sent successfully. ID: {}", message_id);
 
@@ -190,19 +212,20 @@ impl EvolutionAPIClient {
 
         if !status.is_success() {
             error!("EvolutionAPI error: {} - {}", status, body);
+            if let Ok(err_response) = serde_json::from_str::<EvolutionAPIErrorResponse>(&body) {
+                let msg = err_response.response
+                    .and_then(|r| r.message)
+                    .or(err_response.error)
+                    .unwrap_or_else(|| body.clone());
+                anyhow::bail!("Failed to send WhatsApp media: {}", msg);
+            }
             anyhow::bail!("Failed to send WhatsApp media: {}", body);
         }
 
         let api_response: EvolutionAPIResponse = serde_json::from_str(&body)
             .context("Failed to parse EvolutionAPI response")?;
 
-        if !api_response.success {
-            let error_msg = api_response.error.unwrap_or_else(|| "Unknown error".to_string());
-            anyhow::bail!("EvolutionAPI error: {}", error_msg);
-        }
-
-        let message_id = api_response.message_id
-            .unwrap_or_else(|| "no-id".to_string());
+        let message_id = api_response.key.id;
 
         info!("WhatsApp media sent successfully. ID: {}", message_id);
 
@@ -272,6 +295,42 @@ impl EvolutionAPIClient {
         } else {
             Ok(false)
         }
+    }
+
+    /// Simple wrapper to send a text message
+    pub async fn send_simple_text(&self, recipient: &str, message: &str) -> Result<String> {
+        let request = SendTextRequest {
+            number: normalize_dominican_phone(recipient),
+            text: message.to_string(),
+            delay: None,
+            link_preview: Some(false),
+            mentioned: None,
+            mentions_every_one: None,
+            quoted: None,
+        };
+        self.send_text(request).await
+    }
+
+    /// Simple wrapper to send a document (base64 encoded)
+    pub async fn send_document(
+        &self,
+        recipient: &str,
+        base64_content: &str,
+        filename: &str,
+        mimetype: &str,
+    ) -> Result<String> {
+        let request = SendMediaRequest {
+            number: normalize_dominican_phone(recipient),
+            mediatype: MediaType::Document,
+            mimetype: mimetype.to_string(),
+            caption: filename.to_string(),
+            media: base64_content.to_string(),
+            file_name: filename.to_string(),
+            delay: None,
+            link_preview: Some(false),
+            mentions_every_one: Some(false),
+        };
+        self.send_media(request).await
     }
 }
 

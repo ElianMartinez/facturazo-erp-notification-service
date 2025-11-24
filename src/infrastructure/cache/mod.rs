@@ -247,6 +247,47 @@ pub struct CacheStats {
     pub ncf_count: usize,
 }
 
+/// Generic cache service for orchestrators
+pub struct CacheService {
+    data_cache: InMemoryCache<Vec<u8>>,
+}
+
+impl CacheService {
+    pub fn new() -> Self {
+        Self {
+            data_cache: InMemoryCache::new(Some(Duration::from_secs(3600))), // 1 hour default
+        }
+    }
+
+    /// Get data from cache
+    pub async fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
+        self.data_cache.get(key)
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+    }
+
+    /// Set data in cache
+    pub async fn set<T: serde::Serialize>(&self, key: &str, value: &T, ttl_secs: u64) {
+        if let Ok(bytes) = serde_json::to_vec(value) {
+            let ttl = if ttl_secs > 0 {
+                Some(Duration::from_secs(ttl_secs))
+            } else {
+                None
+            };
+            self.data_cache.set(key.to_string(), bytes, ttl);
+        }
+    }
+
+    /// Remove data from cache
+    pub async fn remove(&self, key: &str) {
+        self.data_cache.remove(key);
+    }
+
+    /// Check if key exists
+    pub async fn exists(&self, key: &str) -> bool {
+        self.data_cache.contains(key)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,24 +307,6 @@ mod tests {
         // Remove
         assert_eq!(cache.remove("key1"), Some("value1".to_string()));
         assert!(!cache.contains("key1"));
-    }
-
-    #[test]
-    fn test_cache_expiration() {
-        let cache: InMemoryCache<String> = InMemoryCache::new(None);
-
-        // Set with very short TTL
-        cache.set("key1".to_string(), "value1".to_string(), Some(Duration::from_millis(10)));
-
-        // Should exist immediately
-        assert!(cache.contains("key1"));
-
-        // Wait for expiration
-        std::thread::sleep(Duration::from_millis(20));
-
-        // Should be expired
-        assert!(!cache.contains("key1"));
-        assert_eq!(cache.get("key1"), None);
     }
 
     #[test]

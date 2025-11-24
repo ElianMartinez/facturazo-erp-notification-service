@@ -48,7 +48,8 @@ impl NotificationId {
 #[serde(rename_all = "snake_case")]
 pub enum NotificationChannel {
     Email,
-    WhatsApp,
+    #[serde(alias = "WhatsApp", alias = "whatsapp")]
+    Whatsapp,
     InApp,
     Sms,
 }

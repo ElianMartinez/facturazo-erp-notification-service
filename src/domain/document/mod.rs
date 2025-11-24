@@ -50,7 +50,21 @@ pub enum DocumentType {
     Report,
     Receipt,
     Quotation,
+    CreditNote,
     Custom(String),
+}
+
+impl DocumentType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            DocumentType::Invoice => "invoice",
+            DocumentType::Report => "report",
+            DocumentType::Receipt => "receipt",
+            DocumentType::Quotation => "quotation",
+            DocumentType::CreditNote => "credit_note",
+            DocumentType::Custom(s) => s,
+        }
+    }
 }
 
 /// Document status
@@ -73,6 +87,35 @@ pub enum DocumentFormat {
     Excel,
     Csv,
     Html,
+}
+
+impl DocumentFormat {
+    pub fn as_str(&self) -> &str {
+        match self {
+            DocumentFormat::Pdf => "pdf",
+            DocumentFormat::Excel => "excel",
+            DocumentFormat::Csv => "csv",
+            DocumentFormat::Html => "html",
+        }
+    }
+
+    pub fn file_extension(&self) -> &str {
+        match self {
+            DocumentFormat::Pdf => "pdf",
+            DocumentFormat::Excel => "xlsx",
+            DocumentFormat::Csv => "csv",
+            DocumentFormat::Html => "html",
+        }
+    }
+
+    pub fn mime_type(&self) -> &str {
+        match self {
+            DocumentFormat::Pdf => "application/pdf",
+            DocumentFormat::Excel => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            DocumentFormat::Csv => "text/csv",
+            DocumentFormat::Html => "text/html",
+        }
+    }
 }
 
 // No business logic methods - Document is just a DTO

@@ -57,6 +57,7 @@ image = "0.24"
 # Templates (mantener compatibilidad)
 minijinja = { version = "1.0", features = ["builtins"] }
 tera = "1.19"
+handlebars = "5.1"
 
 # ============================================
 # Notifications
@@ -231,6 +232,10 @@ path = "src/bin/benchmark_report.rs"
 [[bin]]
 name = "kafka-worker"
 path = "src/bin/kafka_worker.rs"
+
+[[bin]]
+name = "local-test"
+path = "src/bin/local_test.rs"
 
 [lib]
 name = "pdf_services"

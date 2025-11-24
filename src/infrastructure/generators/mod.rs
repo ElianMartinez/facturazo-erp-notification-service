@@ -1,6 +1,6 @@
 //! Document generation infrastructure
 //!
-//! Typst-based PDF generation with template management
+//! Multi-format document generation: PDF, Excel, CSV
 
 use anyhow::Result;
 use std::collections::HashMap;
@@ -8,19 +8,30 @@ use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use uuid::Uuid;
+use crate::domain::document::DocumentFormat;
 
+// PDF generators
 pub mod typst_generator;
 pub mod invoice_generator;
 pub mod quotation_generator;
 pub mod report_generator;
 pub mod qr_generator;
+
+// Excel & CSV generators
+pub mod excel_generator;
+pub mod csv_generator;
+
+// Template management
 pub mod template_manager;
 
+// Re-exports
 pub use typst_generator::TypstGenerator;
 pub use invoice_generator::InvoiceGenerator;
 pub use quotation_generator::QuotationGenerator;
 pub use report_generator::ReportGenerator;
 pub use qr_generator::QRGenerator;
+pub use excel_generator::ExcelGenerator;
+pub use csv_generator::CsvGenerator;
 pub use template_manager::TemplateManager;
 
 /// Document generator trait
@@ -69,7 +80,9 @@ impl DocumentType {
 #[derive(Debug, Clone)]
 pub struct GenerationResult {
     pub document_type: DocumentType,
-    pub pdf_bytes: Vec<u8>,
+    pub format: DocumentFormat,
+    pub document_bytes: Vec<u8>,
+    pub mime_type: String,
     pub metadata: GenerationMetadata,
 }
 
@@ -103,89 +116,130 @@ impl Default for GenerationOptions {
     }
 }
 
-/// Generator factory
+/// Generator factory with multi-format support
 pub struct GeneratorFactory {
-    generators: HashMap<DocumentType, Box<dyn DocumentGenerator>>,
+    pdf_generators: HashMap<DocumentType, Box<dyn DocumentGenerator>>,
+    excel_generator: ExcelGenerator,
+    csv_generator: CsvGenerator,
     template_manager: TemplateManager,
 }
 
 impl GeneratorFactory {
     pub fn new(template_dir: PathBuf) -> Self {
-        let mut generators = HashMap::new();
+        let mut pdf_generators = HashMap::new();
         let template_manager = TemplateManager::new(template_dir.clone());
 
-        // Register generators
-        generators.insert(
+        // Register PDF generators
+        pdf_generators.insert(
             DocumentType::Invoice,
             Box::new(InvoiceGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>
         );
 
-        generators.insert(
+        pdf_generators.insert(
             DocumentType::Quotation,
             Box::new(QuotationGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>
         );
 
-        generators.insert(
+        pdf_generators.insert(
             DocumentType::Report,
             Box::new(ReportGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>
         );
 
+        // Create Excel and CSV generators
+        let excel_generator = ExcelGenerator::new(template_dir.clone());
+        let csv_generator = CsvGenerator::new();
+
         Self {
-            generators,
+            pdf_generators,
+            excel_generator,
+            csv_generator,
             template_manager,
         }
     }
 
-    /// Get generator for document type
-    pub fn get_generator(&self, doc_type: DocumentType) -> Option<&Box<dyn DocumentGenerator>> {
-        self.generators.get(&doc_type)
+    /// Get PDF generator for document type
+    pub fn get_pdf_generator(&self, doc_type: DocumentType) -> Option<&Box<dyn DocumentGenerator>> {
+        self.pdf_generators.get(&doc_type)
     }
 
-    /// Generate document
+    /// Get Excel generator
+    pub fn get_excel_generator(&self) -> &ExcelGenerator {
+        &self.excel_generator
+    }
+
+    /// Get CSV generator
+    pub fn get_csv_generator(&self) -> &CsvGenerator {
+        &self.csv_generator
+    }
+
+    /// Generate document with format selection
     pub async fn generate(
         &self,
         doc_type: DocumentType,
+        format: DocumentFormat,
         data: serde_json::Value,
         options: GenerationOptions,
     ) -> Result<GenerationResult> {
         let start_time = std::time::Instant::now();
 
-        // Get generator
-        let generator = self.get_generator(doc_type)
-            .ok_or_else(|| anyhow::anyhow!("No generator for document type: {:?}", doc_type))?;
+        // Generate based on format
+        let (document_bytes, mime_type) = match format {
+            DocumentFormat::Pdf => {
+                // Get PDF generator
+                let generator = self.get_pdf_generator(doc_type)
+                    .ok_or_else(|| anyhow::anyhow!("No PDF generator for document type: {:?}", doc_type))?;
 
-        // Get template
-        let template = self.template_manager
-            .get_template(doc_type.template_name())
-            .await?;
+                // Get template
+                let template = self.template_manager
+                    .get_template(doc_type.template_name())
+                    .await?;
 
-        // Generate document
-        let mut pdf_bytes = generator.generate(&template, &data).await?;
+                // Generate PDF
+                let mut pdf_bytes = generator.generate(&template, &data).await?;
 
-        // Apply options
-        if options.compress {
-            // PDF compression would go here
-        }
+                // Apply PDF-specific options
+                if options.compress {
+                    // PDF compression would go here
+                }
 
-        if let Some(watermark) = options.watermark {
-            // Watermark application would go here
-        }
+                if let Some(watermark) = &options.watermark {
+                    // Watermark application would go here
+                }
 
-        if options.password_protect {
-            // Password protection would go here
-        }
+                if options.password_protect {
+                    // Password protection would go here
+                }
+
+                (pdf_bytes, "application/pdf")
+            },
+            DocumentFormat::Excel => {
+                // Generate Excel
+                let excel_bytes = self.excel_generator.generate("", &data).await?;
+                (excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            },
+            DocumentFormat::Csv => {
+                // Generate CSV
+                let csv_bytes = self.csv_generator.generate("", &data).await?;
+                (csv_bytes, "text/csv")
+            },
+            DocumentFormat::Html => {
+                return Err(anyhow::anyhow!("HTML format not yet implemented"));
+            }
+        };
 
         let generation_time_ms = start_time.elapsed().as_millis() as u64;
 
         Ok(GenerationResult {
             document_type: doc_type,
-            pdf_bytes: pdf_bytes.clone(),
+            format,
+            document_bytes: document_bytes.clone(),
+            mime_type: mime_type.to_string(),
             metadata: GenerationMetadata {
                 document_id: Uuid::new_v4().to_string(),
                 template_version: "1.0.0".to_string(),
                 generation_time_ms,
-                page_count: 1, // Would need to parse PDF to get actual count
-                file_size_bytes: pdf_bytes.len(),
+                page_count: 1, // Would need to parse document to get actual count
+                file_size_bytes: document_bytes.len(),
             },
         })
     }

@@ -1,8 +1,13 @@
 use std::sync::Arc;
+use std::path::PathBuf;
 use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DashMapStateStore};
 
 use crate::templates::TemplateManager;
 use crate::storage::s3::S3Client;
+use crate::infrastructure::generators::GeneratorFactory;
+use crate::infrastructure::storage::StorageService;
+use crate::infrastructure::cache::CacheService;
+use crate::application::orchestrators::DocumentOrchestrator;
 
 // Key format: "tenant_id:user_id"
 pub type KeyedRateLimiter = Arc<RateLimiter<String, DashMapStateStore<String>, DefaultClock>>;
@@ -13,6 +18,10 @@ pub struct ApiState {
     pub template_manager: Arc<TemplateManager>,
     pub rate_limiter: KeyedRateLimiter,
     pub config: Arc<AppConfig>,
+    pub generator_factory: Arc<GeneratorFactory>,
+    pub document_orchestrator: Arc<DocumentOrchestrator>,
+    pub cache_service: Arc<CacheService>,
+    pub storage_service: Arc<StorageService>,
 }
 
 #[derive(Clone)]
@@ -58,11 +67,33 @@ impl ApiState {
             .allow_burst(std::num::NonZeroU32::new(config.rate_limit_burst).unwrap());
         let rate_limiter = Arc::new(RateLimiter::dashmap_with_clock(quota, &DefaultClock::default()));
 
+        // Initialize new infrastructure components
+        let work_dir = PathBuf::from("./work");
+        let generator_factory = Arc::new(GeneratorFactory::new(work_dir.clone()));
+        let cache_service = Arc::new(CacheService::new());
+        let storage_service = Arc::new(StorageService::new(
+            PathBuf::from("./storage"),
+            config.s3_bucket_documents.clone()
+        ));
+
+        // Initialize document orchestrator
+        let document_orchestrator = Arc::new(DocumentOrchestrator::new(
+            generator_factory.clone(),
+            storage_service.clone(),
+            cache_service.clone(),
+            None, // Email service - can be configured later
+            None, // WhatsApp service - can be configured later
+        ));
+
         Ok(ApiState {
             s3_client,
             template_manager,
             rate_limiter,
             config: Arc::new(config),
+            generator_factory,
+            document_orchestrator,
+            cache_service,
+            storage_service,
         })
     }
 }

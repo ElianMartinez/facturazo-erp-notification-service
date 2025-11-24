@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde_json::Value;
 use std::path::PathBuf;
 use super::{DocumentGenerator, DocumentType, TypstGenerator};
+use super::typst_generator::helpers::format_number;
 
 /// Report PDF generator
 pub struct ReportGenerator {
@@ -19,7 +20,7 @@ impl ReportGenerator {
 
     /// Create default report template
     fn create_report_template() -> &'static str {
-        r#"
+        r##"
 #set page(
   paper: "us-letter",
   margin: (top: 2cm, bottom: 2cm, left: 1.5cm, right: 1.5cm),
@@ -149,7 +150,7 @@ impl ReportGenerator {
     ]
   ]
 )
-        "#
+        "##
     }
 }
 
@@ -194,7 +195,7 @@ impl DocumentGenerator for ReportGenerator {
                         for cell in cells {
                             // Format numbers with thousands separator
                             if let Some(num) = cell.as_f64() {
-                                *cell = serde_json::json!(format!("{:,.2}", num));
+                                *cell = serde_json::json!(format_number(num, 2));
                             }
                         }
                     }

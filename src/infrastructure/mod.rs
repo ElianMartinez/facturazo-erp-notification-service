@@ -10,6 +10,7 @@ pub mod notifications;
 pub mod persistence;
 pub mod observability;
 pub mod kafka;
+pub mod resilience;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -18,7 +19,7 @@ use std::sync::Arc;
 pub struct Infrastructure {
     pub database: Arc<database::Database>,
     pub cache: Arc<cache::CacheManager>,
-    // pub document_repository: Arc<database::SqliteDocumentRepository>,
+    pub resilience: Arc<resilience::ResilienceManager>,
 }
 
 impl Infrastructure {
@@ -32,15 +33,15 @@ impl Infrastructure {
         // Initialize cache
         let cache = Arc::new(cache::CacheManager::new());
 
-        // Initialize repositories
-        // let document_repository = Arc::new(
-        //     database::SqliteDocumentRepository::new(database.pool().clone())
-        // );
+        // Initialize resilience manager
+        let resilience = Arc::new(resilience::ResilienceManager::new(
+            resilience::ResilienceConfig::default()
+        ));
 
         Ok(Self {
             database,
             cache,
-            // document_repository,
+            resilience,
         })
     }
 
@@ -52,6 +53,11 @@ impl Infrastructure {
         // Cache is always available (in-memory)
 
         Ok(())
+    }
+
+    /// Get health status with all dependencies
+    pub async fn health_status(&self) -> resilience::HealthStatus {
+        self.resilience.health_status().await
     }
 
     /// Shutdown infrastructure services

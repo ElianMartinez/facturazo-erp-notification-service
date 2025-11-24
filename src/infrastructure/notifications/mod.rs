@@ -8,7 +8,11 @@ pub mod email;
 use anyhow::Result;
 use async_trait::async_trait;
 
+// Re-export main types
 pub use evolution_api::EvolutionAPIClient;
+pub use evolution_api::EvolutionAPIClient as EvolutionApiClient;  // Alias
+pub use email::EmailService;
+pub use email::EmailAttachment;
 
 /// Trait for notification services
 #[async_trait]

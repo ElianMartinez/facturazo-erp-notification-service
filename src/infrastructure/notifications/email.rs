@@ -91,7 +91,7 @@ impl EmailService {
 
             multipart = multipart.singlepart(
                 LettreAttachment::new(attachment.filename)
-                    .body(attachment.content, content_type.parse()?),
+                    .body(attachment.data, content_type.parse()?),
             );
         }
 
@@ -195,7 +195,7 @@ impl EmailService {
         let attachment = EmailAttachment {
             filename: format!("{}.pdf", invoice_number),
             content_type: "application/pdf".to_string(),
-            content: pdf_bytes,
+            data: pdf_bytes,
         };
 
         self.send_email(
@@ -237,5 +237,29 @@ impl EmailService {
 pub struct EmailAttachment {
     pub filename: String,
     pub content_type: String,
-    pub content: Vec<u8>,
+    pub data: Vec<u8>,
+}
+
+impl EmailService {
+    /// Send email with simple attachment wrapper
+    pub async fn send_with_attachments(
+        &self,
+        to: &str,
+        subject: &str,
+        body: &str,
+        attachments: Vec<EmailAttachment>,
+    ) -> Result<()> {
+        // Convert attachments to internal format (data -> content)
+        let internal_attachments: Vec<EmailAttachment> = attachments
+            .into_iter()
+            .map(|a| EmailAttachment {
+                filename: a.filename,
+                content_type: a.content_type,
+                data: a.data,
+            })
+            .collect();
+
+        self.send_email(to, subject, body, None, internal_attachments).await?;
+        Ok(())
+    }
 }
