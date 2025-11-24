@@ -1,0 +1,178 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, v2-microservice]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ===========================================
+  # Build Job - Compiles the project
+  # ===========================================
+  build:
+    name: Build
+    runs-on: [self-hosted, linux, x64, pdf-services]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: |
+          source $HOME/.cargo/env
+          rustc --version
+          cargo --version
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build (Debug)
+        run: |
+          source $HOME/.cargo/env
+          cargo build --all-targets
+
+      - name: Build (Release)
+        run: |
+          source $HOME/.cargo/env
+          cargo build --release
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-services-binary
+          path: |
+            target/release/pdf-services
+            target/release/api
+            target/release/kafka-worker
+          retention-days: 7
+
+  # ===========================================
+  # Test Job - Runs all tests
+  # ===========================================
+  test:
+    name: Test
+    runs-on: [self-hosted, linux, x64, pdf-services]
+    needs: build
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: |
+          source $HOME/.cargo/env
+          rustc --version
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run tests
+        run: |
+          source $HOME/.cargo/env
+          cargo test --all-targets -- --test-threads=4
+        timeout-minutes: 10
+
+      - name: Run doc tests
+        run: |
+          source $HOME/.cargo/env
+          cargo test --doc
+        timeout-minutes: 5
+
+  # ===========================================
+  # Lint Job - Code quality checks
+  # ===========================================
+  lint:
+    name: Lint & Format
+    runs-on: [self-hosted, linux, x64, pdf-services]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: |
+          source $HOME/.cargo/env
+          rustup component add clippy rustfmt
+
+      - name: Check formatting
+        run: |
+          source $HOME/.cargo/env
+          cargo fmt --all -- --check
+
+      - name: Run Clippy
+        run: |
+          source $HOME/.cargo/env
+          cargo clippy --all-targets --all-features -- -D warnings
+        continue-on-error: true  # Don't fail on warnings for now
+
+  # ===========================================
+  # Security Job - Audit dependencies
+  # ===========================================
+  security:
+    name: Security Audit
+    runs-on: [self-hosted, linux, x64, pdf-services]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        run: |
+          source $HOME/.cargo/env
+          cargo install cargo-audit --quiet || true
+
+      - name: Run security audit
+        run: |
+          source $HOME/.cargo/env
+          cargo audit || true  # Don't fail on audit issues for now
+        continue-on-error: true
+
+  # ===========================================
+  # Deploy Job - Deploy to production (main only)
+  # ===========================================
+  deploy:
+    name: Deploy
+    runs-on: [self-hosted, linux, x64, pdf-services]
+    needs: [build, test]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binary
+        uses: actions/download-artifact@v4
+        with:
+          name: pdf-services-binary
+          path: ./binaries
+
+      - name: Deploy to server
+        run: |
+          echo "=== Deployment ==="
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Commit: ${{ github.sha }}"
+          echo "Binaries ready for deployment:"
+          ls -la ./binaries/
+          # Add deployment commands here
+          # Example: scp ./binaries/pdf-services user@production:/opt/pdf-services/
+          # Example: ssh user@production "systemctl restart pdf-services"
+
+      - name: Notify deployment
+        run: |
+          echo "Deployment completed for commit ${{ github.sha }}"
