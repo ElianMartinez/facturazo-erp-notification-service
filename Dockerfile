@@ -1,7 +1,21 @@
 # ===========================================
-# Stage 1: Build
+# Stage 1: Chef - Prepare recipe
 # ===========================================
-FROM rust:1.83-bookworm AS builder
+FROM rust:1.83-bookworm AS chef
+RUN cargo install cargo-chef
+WORKDIR /app
+
+# ===========================================
+# Stage 2: Planner - Analyze dependencies
+# ===========================================
+FROM chef AS planner
+COPY . .
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ===========================================
+# Stage 3: Builder - Build dependencies and app
+# ===========================================
+FROM chef AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -18,28 +32,16 @@ WORKDIR /app
 # Configure cargo for better network reliability
 ENV CARGO_NET_RETRY=10
 
-# Copy manifests first for better caching
-COPY Cargo.toml Cargo.lock ./
+# Copy recipe and build dependencies (cached layer)
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
 
-# Create dummy src to build dependencies
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
-    echo "pub fn dummy() {}" > src/lib.rs
-
-# Fetch all dependencies
-RUN cargo fetch --locked
-
-# Build dependencies only (cached layer)
-RUN cargo build --release && rm -rf src target/release/deps/pdf_services*
-
-# Copy actual source code
-COPY src ./src
-
-# Build the actual application
+# Copy source code and build application
+COPY . .
 RUN cargo build --release --bin api --bin kafka-worker
 
 # ===========================================
-# Stage 2: Runtime
+# Stage 4: Runtime
 # ===========================================
 FROM debian:bookworm-slim AS runtime
 
