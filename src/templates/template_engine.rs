@@ -1,8 +1,7 @@
 use crate::templates::template_models::*;
 use crate::templates::template_trait::{TemplateRegistry, TypstTemplate};
-use anyhow::{Result, Context};
+use anyhow::Result;
 use std::fs;
-use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 use serde_json;

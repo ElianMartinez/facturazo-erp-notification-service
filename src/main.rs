@@ -1,8 +1,8 @@
 // use actix_cors::Cors;
 use actix_web::{middleware, web, App, HttpServer};
 use anyhow::Result;
-use document_generator::api::state::AppConfig;
-use document_generator::api::{configure_routes, ApiState};
+use pdf_services::api::state::AppConfig;
+use pdf_services::api::{configure_routes, ApiState};
 use prometheus::Registry;
 use std::env;
 use tracing_subscriber::EnvFilter;

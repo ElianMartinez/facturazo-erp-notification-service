@@ -9,6 +9,8 @@ use crate::models::{
     DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, Priority
 };
 use crate::generators::{PdfGenerator, ExcelGenerator};
+use crate::application::commands::GenerateDocumentCommand;
+use crate::domain::document::{DocumentFormat, DocumentType as DomainDocType};
 use super::state::ApiState;
 use super::error::ApiResult;
 
@@ -246,44 +248,50 @@ async fn generate_invoice_sync(
     request: &DocumentRequest,
     state: &ApiState,
 ) -> anyhow::Result<String> {
-    // Generate PDF using the generic generator with template
-    let pdf_generator = PdfGenerator::new(state.template_manager.clone());
-    let pdf_bytes = pdf_generator.generate(&request.template_id, request.data.clone()).await?;
+    // Build command for orchestrator
+    let command = GenerateDocumentCommand {
+        tenant_id: request.metadata.tenant_id.to_string(),
+        user_id: Some(request.metadata.user_id.to_string()),
+        document_type: DomainDocType::Invoice,
+        format: DocumentFormat::Pdf,
+        data: request.data.clone(),
+        template_id: request.template_id.clone(),
+        template_version: "latest".to_string(),
+        storage_enabled: true,
+        notification_enabled: false,
+        priority: crate::application::commands::Priority::Normal,
+    };
 
-    // Upload to S3
-    let org_id = request.metadata.organization_id.clone()
-        .unwrap_or_else(|| format!("tenant_{}", request.metadata.tenant_id));
-    let key = format!("invoices/{}/{}.pdf", org_id, request.id);
-    let url = state.s3_client.put_object(
-        &state.config.s3_bucket_documents,
-        &key,
-        pdf_bytes,
-        "application/pdf",
-    ).await?;
+    // Use orchestrator to generate and store
+    let result = state.document_orchestrator.execute(command).await?;
 
-    Ok(url)
+    // Return URL or file path
+    result.storage_url.ok_or_else(|| anyhow::anyhow!("No storage URL returned"))
 }
 
 async fn generate_report_sync(
     request: &DocumentRequest,
     state: &ApiState,
 ) -> anyhow::Result<String> {
-    // Generate Excel using the generic generator
-    let excel_generator = ExcelGenerator::new();
-    let excel_bytes = excel_generator.generate(request.data.clone()).await?;
+    // Build command for orchestrator - reports default to Excel
+    let command = GenerateDocumentCommand {
+        tenant_id: request.metadata.tenant_id.to_string(),
+        user_id: Some(request.metadata.user_id.to_string()),
+        document_type: DomainDocType::Report,
+        format: DocumentFormat::Excel,
+        data: request.data.clone(),
+        template_id: request.template_id.clone(),
+        template_version: "latest".to_string(),
+        storage_enabled: true,
+        notification_enabled: false,
+        priority: crate::application::commands::Priority::Normal,
+    };
 
-            // Upload to S3
-            let org_id = request.metadata.organization_id.clone()
-                .unwrap_or_else(|| format!("tenant_{}", request.metadata.tenant_id));
-            let key = format!("reports/{}/{}.xlsx", org_id, request.id);
-            let url = state.s3_client.put_object(
-                &state.config.s3_bucket_documents,
-                &key,
-                excel_bytes,
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            ).await?;
+    // Use orchestrator to generate and store
+    let result = state.document_orchestrator.execute(command).await?;
 
-            Ok(url)
+    // Return URL or file path
+    result.storage_url.ok_or_else(|| anyhow::anyhow!("No storage URL returned"))
 }
 
 pub fn extract_tenant_user(req: &HttpRequest) -> (i64, i64) {
@@ -331,49 +339,47 @@ async fn extract_tenant_user_ids(_req: &HttpRequest) -> (i64, i64) {
     (1, 1)
 }
 
-// Process document asynchronously
+// Process document asynchronously using orchestrator
 async fn process_document_async(
     state: web::Data<ApiState>,
     request: DocumentRequest,
 ) -> anyhow::Result<()> {
     let start = std::time::Instant::now();
 
-    // Generate document based on type
-    let (bytes, filename) = match request.document_type {
-        DocumentType::Invoice => {
-            let pdf_generator = PdfGenerator::new(state.template_manager.clone());
-            let pdf_bytes = pdf_generator.generate(&request.template_id, request.data.clone()).await?;
-            (pdf_bytes, format!("invoice_{}.pdf", request.id))
-        },
-        DocumentType::Report => {
-            let excel_generator = ExcelGenerator::new();
-            let excel_bytes = excel_generator.generate(request.data.clone()).await?;
-            (excel_bytes, format!("report_{}.xlsx", request.id))
-        },
-        _ => {
-            // For other types, try to use template
-            let pdf_generator = PdfGenerator::new(state.template_manager.clone());
-            let pdf_bytes = pdf_generator.generate(&request.template_id, request.data.clone()).await?;
-            (pdf_bytes, format!("document_{}.pdf", request.id))
-        }
+    // Map document type to domain type and format
+    let (doc_type, format) = match &request.document_type {
+        DocumentType::Invoice => (DomainDocType::Invoice, DocumentFormat::Pdf),
+        DocumentType::Report => (DomainDocType::Report, DocumentFormat::Excel),
+        DocumentType::Receipt => (DomainDocType::Receipt, DocumentFormat::Pdf),
+        DocumentType::Certificate => (DomainDocType::Custom("certificate".to_string()), DocumentFormat::Pdf),
+        DocumentType::Statement => (DomainDocType::Custom("statement".to_string()), DocumentFormat::Pdf),
+        DocumentType::Custom(name) => (DomainDocType::Custom(name.clone()), DocumentFormat::Pdf),
     };
 
-    // Upload to S3
-    let s3_key = format!("{}/{}/{}",
-        request.metadata.organization_id.unwrap_or_else(|| "default".to_string()),
-        request.metadata.tenant_id,
-        filename
-    );
+    // Build command for orchestrator
+    let command = GenerateDocumentCommand {
+        tenant_id: request.metadata.tenant_id.to_string(),
+        user_id: Some(request.metadata.user_id.to_string()),
+        document_type: doc_type,
+        format,
+        data: request.data.clone(),
+        template_id: request.template_id.clone(),
+        template_version: "latest".to_string(),
+        storage_enabled: true,
+        notification_enabled: false,
+        priority: crate::application::commands::Priority::Normal,
+    };
 
-    state.s3_client.put_object(
-        &state.config.s3_bucket_documents,
-        &s3_key,
-        bytes,
-        "application/pdf",
-    ).await?;
+    // Use orchestrator to generate and store
+    let result = state.document_orchestrator.execute(command).await?;
 
     let processing_time = start.elapsed().as_millis() as i64;
-    tracing::info!("Document {} processed in {}ms", request.id, processing_time);
+    tracing::info!(
+        "Document {} processed in {}ms, size: {} bytes",
+        request.id,
+        processing_time,
+        result.file_size
+    );
 
     Ok(())
 }

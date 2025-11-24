@@ -48,6 +48,10 @@ impl TemplateRegistry {
         let report = Arc::new(ReportTemplate::new());
         templates.insert(report.template_id().to_string(), report);
 
+        // Cotización
+        let quotation = Arc::new(QuotationTemplate::new());
+        templates.insert(quotation.template_id().to_string(), quotation);
+
         Self { templates }
     }
 
