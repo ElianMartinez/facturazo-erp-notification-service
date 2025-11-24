@@ -1,16 +1,16 @@
-//! Document domain module
+//! Document DTOs - Data structures for document tracking
 //!
-//! Contains all document-related domain logic
+//! Simple tracking of generated documents. NO business logic.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Document entity
+/// Document metadata for tracking generated PDFs
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
     pub id: DocumentId,
-    pub tenant_id: crate::domain::shared::TenantId,
+    pub tenant_id: String,
     pub document_type: DocumentType,
     pub status: DocumentStatus,
     pub template_id: String,
@@ -75,58 +75,4 @@ pub enum DocumentFormat {
     Html,
 }
 
-impl Document {
-    /// Create a new document
-    pub fn new(
-        tenant_id: crate::domain::shared::TenantId,
-        document_type: DocumentType,
-        template_id: String,
-        template_version: String,
-        data: serde_json::Value,
-        format: DocumentFormat,
-    ) -> Self {
-        let now = Utc::now();
-        Self {
-            id: DocumentId::new(),
-            tenant_id,
-            document_type,
-            status: DocumentStatus::Pending,
-            template_id,
-            template_version,
-            data,
-            format,
-            storage_path: None,
-            storage_url: None,
-            size_bytes: None,
-            created_at: now,
-            updated_at: now,
-        }
-    }
-
-    /// Mark document as processing
-    pub fn mark_processing(&mut self) {
-        self.status = DocumentStatus::Processing;
-        self.updated_at = Utc::now();
-    }
-
-    /// Mark document as generated
-    pub fn mark_generated(&mut self, size_bytes: u64) {
-        self.status = DocumentStatus::Generated;
-        self.size_bytes = Some(size_bytes);
-        self.updated_at = Utc::now();
-    }
-
-    /// Mark document as stored
-    pub fn mark_stored(&mut self, path: String, url: String) {
-        self.status = DocumentStatus::Stored;
-        self.storage_path = Some(path);
-        self.storage_url = Some(url);
-        self.updated_at = Utc::now();
-    }
-
-    /// Mark document as failed
-    pub fn mark_failed(&mut self) {
-        self.status = DocumentStatus::Failed;
-        self.updated_at = Utc::now();
-    }
-}
+// No business logic methods - Document is just a DTO

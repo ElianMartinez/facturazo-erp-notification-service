@@ -1,7 +1,7 @@
-//! Domain layer - Core business logic
+//! Domain layer - Data Transfer Objects (DTOs)
 //!
-//! This module contains all domain entities, value objects, and business rules.
-//! It should have no dependencies on external frameworks or infrastructure.
+//! This module contains only data structures for document generation.
+//! NO business logic, validations or calculations - those belong to the core service.
 
 pub mod document;
 pub mod fiscal;
@@ -11,7 +11,7 @@ pub mod shared;
 
 // Re-export commonly used types
 pub use document::{Document, DocumentId, DocumentType, DocumentStatus};
-pub use fiscal::{NCF, RNC, Cedula, ITBIS, TipoComprobante, FiscalError};
-pub use invoice::{Invoice, InvoiceId, InvoiceStatus, InvoiceItem, Currency, PaymentTerms};
+pub use fiscal::{NCF, RNC, Cedula, ITBIS, TaxId, TaxIdType};
+pub use invoice::{InvoiceData, SellerData, CustomerData, InvoiceItemData, InvoiceStatus};
 pub use notification::{Notification, NotificationChannel, NotificationStatus};
 pub use shared::{TenantId, UserId, DomainError, DomainResult};

@@ -70,13 +70,13 @@ pub trait DocumentRepository: Send + Sync {
 /// Repository trait for invoices
 #[async_trait::async_trait]
 pub trait InvoiceRepository: Send + Sync {
-    async fn create(&self, invoice: &crate::domain::invoice::Invoice) -> Result<String>;
-    async fn find_by_id(&self, tenant_id: &str, invoice_id: &str) -> Result<Option<crate::domain::invoice::Invoice>>;
-    async fn find_by_ncf(&self, ncf: &str) -> Result<Option<crate::domain::invoice::Invoice>>;
-    async fn find_by_number(&self, tenant_id: &str, invoice_number: &str) -> Result<Option<crate::domain::invoice::Invoice>>;
+    async fn create(&self, invoice: &crate::domain::invoice::InvoiceData) -> Result<String>;
+    async fn find_by_id(&self, tenant_id: &str, invoice_id: &str) -> Result<Option<crate::domain::invoice::InvoiceData>>;
+    async fn find_by_ncf(&self, ncf: &str) -> Result<Option<crate::domain::invoice::InvoiceData>>;
+    async fn find_by_number(&self, tenant_id: &str, invoice_number: &str) -> Result<Option<crate::domain::invoice::InvoiceData>>;
     async fn update_status(&self, tenant_id: &str, invoice_id: &str, status: crate::domain::invoice::InvoiceStatus) -> Result<()>;
     async fn mark_paid(&self, tenant_id: &str, invoice_id: &str, payment_method: &str, paid_date: chrono::DateTime<chrono::Utc>) -> Result<()>;
-    async fn list_overdue(&self, tenant_id: &str) -> Result<Vec<crate::domain::invoice::Invoice>>;
+    async fn list_overdue(&self, tenant_id: &str) -> Result<Vec<crate::domain::invoice::InvoiceData>>;
     async fn get_next_invoice_number(&self, tenant_id: &str) -> Result<String>;
 }
 

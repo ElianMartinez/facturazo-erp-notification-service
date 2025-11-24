@@ -48,34 +48,19 @@ impl QRGenerator {
         Ok(())
     }
 
-    /// Format fiscal data for QR code according to DGII specifications
+    /// Format fiscal data for QR code - uses pre-formatted URL from core service
     fn format_fiscal_data(data: &FiscalQRData) -> String {
-        // DGII QR Format:
-        // https://dgii.gov.do/factura/{RNC_EMISOR}/{NCF}/{FECHA}/{MONTO_TOTAL}/{RNC_COMPRADOR}/{HASH}
+        // If core service provides a pre-formatted URL, use it
+        if let Some(url) = &data.qr_url {
+            return url.clone();
+        }
 
-        let date_str = data.issue_date.format("%Y%m%d").to_string();
-
-        // Calculate simple hash for verification (in production, use DGII's method)
-        let hash_input = format!(
-            "{}{}{}{}{}",
-            data.seller_rnc,
-            data.ncf,
-            date_str,
-            data.total_amount,
-            data.buyer_rnc.as_deref().unwrap_or("")
-        );
-
-        let hash = format!("{:x}", md5::compute(hash_input));
-
-        // Build QR URL
+        // Otherwise, build basic URL (core service should provide this)
         format!(
-            "https://dgii.gov.do/factura/{}/{}/{}/{:.2}/{}/{}",
+            "https://dgii.gov.do/factura/{}/{}/{}",
             data.seller_rnc,
             data.ncf,
-            date_str,
-            data.total_amount,
-            data.buyer_rnc.as_deref().unwrap_or(""),
-            &hash[0..8] // Use first 8 chars of hash
+            data.invoice_number
         )
     }
 
@@ -104,16 +89,15 @@ impl QRGenerator {
     }
 }
 
-/// Fiscal QR data structure
+/// Fiscal QR data structure (data comes from core service)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FiscalQRData {
     pub seller_rnc: String,
     pub ncf: String,
-    pub issue_date: chrono::DateTime<chrono::Utc>,
-    pub total_amount: f64,
-    pub buyer_rnc: Option<String>,
-    pub itbis_amount: f64,
     pub invoice_number: String,
+    pub qr_url: Option<String>,  // Pre-formatted URL from core service
+    // Optional fields if not using pre-formatted URL
+    pub buyer_rnc: Option<String>,
 }
 
 /// Payment QR data structure
@@ -158,11 +142,9 @@ mod tests {
         let data = FiscalQRData {
             seller_rnc: "130123456".to_string(),
             ncf: "E3100000001".to_string(),
-            issue_date: Utc::now(),
-            total_amount: 1500.00,
-            buyer_rnc: Some("131654321".to_string()),
-            itbis_amount: 270.00,
             invoice_number: "INV-2024-0001".to_string(),
+            qr_url: Some("https://dgii.gov.do/factura/130123456/E3100000001/example".to_string()),
+            buyer_rnc: Some("131654321".to_string()),
         };
 
         let qr_bytes = QRGenerator::generate_fiscal_qr(&data).unwrap();
@@ -177,11 +159,9 @@ mod tests {
         let data = FiscalQRData {
             seller_rnc: "130123456".to_string(),
             ncf: "E3100000001".to_string(),
-            issue_date: Utc::now(),
-            total_amount: 1500.00,
-            buyer_rnc: None,
-            itbis_amount: 270.00,
             invoice_number: "INV-2024-0001".to_string(),
+            qr_url: None,
+            buyer_rnc: None,
         };
 
         let base64_qr = QRGenerator::generate_fiscal_qr_base64(&data).unwrap();
@@ -204,22 +184,30 @@ mod tests {
 
     #[test]
     fn test_fiscal_data_formatting() {
-        let data = FiscalQRData {
+        // Test with pre-formatted URL
+        let data_with_url = FiscalQRData {
             seller_rnc: "130123456".to_string(),
             ncf: "E3100000001".to_string(),
-            issue_date: chrono::DateTime::parse_from_rfc3339("2024-11-24T12:00:00Z")
-                .unwrap()
-                .with_timezone(&Utc),
-            total_amount: 1500.00,
-            buyer_rnc: Some("131654321".to_string()),
-            itbis_amount: 270.00,
             invoice_number: "INV-2024-0001".to_string(),
+            qr_url: Some("https://dgii.gov.do/custom/url".to_string()),
+            buyer_rnc: Some("131654321".to_string()),
         };
 
-        let formatted = QRGenerator::format_fiscal_data(&data);
+        let formatted = QRGenerator::format_fiscal_data(&data_with_url);
+        assert_eq!(formatted, "https://dgii.gov.do/custom/url");
+
+        // Test without pre-formatted URL
+        let data_no_url = FiscalQRData {
+            seller_rnc: "130123456".to_string(),
+            ncf: "E3100000001".to_string(),
+            invoice_number: "INV-2024-0001".to_string(),
+            qr_url: None,
+            buyer_rnc: None,
+        };
+
+        let formatted = QRGenerator::format_fiscal_data(&data_no_url);
         assert!(formatted.contains("dgii.gov.do"));
         assert!(formatted.contains("130123456"));
         assert!(formatted.contains("E3100000001"));
-        assert!(formatted.contains("1500.00"));
     }
 }

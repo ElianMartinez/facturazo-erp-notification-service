@@ -6,7 +6,6 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::domain::document::{Document, DocumentId, DocumentType, DocumentStatus};
-use crate::domain::shared::TenantId;
 
 /// SQLite implementation of DocumentRepository
 pub struct SqliteDocumentRepository {
@@ -69,7 +68,7 @@ impl super::DocumentRepository for SqliteDocumentRepository {
             Some(r) => {
                 let document = Document {
                     id: DocumentId::from_string(r.id),
-                    tenant_id: TenantId::new(r.tenant_id),
+                    tenant_id: r.tenant_id,
                     document_type: DocumentType::from_str(&r.document_type)?,
                     document_number: r.document_number,
                     storage_path: r.storage_path,
@@ -109,7 +108,7 @@ impl super::DocumentRepository for SqliteDocumentRepository {
             Some(r) => {
                 let document = Document {
                     id: DocumentId::from_string(r.id),
-                    tenant_id: TenantId::new(r.tenant_id),
+                    tenant_id: r.tenant_id,
                     document_type: DocumentType::from_str(&r.document_type)?,
                     document_number: r.document_number,
                     storage_path: r.storage_path,
@@ -195,7 +194,7 @@ impl super::DocumentRepository for SqliteDocumentRepository {
         for r in rows {
             let document = Document {
                 id: DocumentId::from_string(r.id),
-                tenant_id: TenantId::new(r.tenant_id),
+                tenant_id: r.tenant_id,
                 document_type: DocumentType::from_str(&r.document_type)?,
                 document_number: r.document_number,
                 storage_path: r.storage_path,
