@@ -1,5 +1,5 @@
 [package]
-name = "document-generator"
+name = "pdf-services"
 version = "1.0.0"
 edition = "2021"
 
@@ -76,6 +76,18 @@ strip = false
 name = "api"
 path = "src/main.rs"
 
+[[bin]]
+name = "quotation-generator"
+path = "src/bin/quotation_generator.rs"
+
+[[bin]]
+name = "pdf-services"
+path = "src/bin/pdf_services.rs"
+
+[[bin]]
+name = "benchmark-report"
+path = "src/bin/benchmark_report.rs"
+
 [lib]
-name = "document_generator"
+name = "pdf_services"
 path = "src/lib.rs"

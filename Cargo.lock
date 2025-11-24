@@ -1190,44 +1190,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "document-generator"
-version = "1.0.0"
-dependencies = [
- "actix-cors",
- "actix-rt",
- "actix-web",
- "actix-web-httpauth",
- "anyhow",
- "async-trait",
- "aws-config",
- "aws-sdk-s3",
- "base64 0.21.7",
- "bytes",
- "chrono",
- "dotenv",
- "flate2",
- "futures",
- "governor",
- "image 0.24.9",
- "minijinja",
- "once_cell",
- "prometheus",
- "qrcode",
- "rand 0.8.5",
- "reqwest",
- "rust_xlsxwriter",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-actix-web",
- "tracing-subscriber",
- "uuid",
- "zstd",
-]
-
-[[package]]
 name = "dotenv"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2448,6 +2410,44 @@ dependencies = [
  "redox_syscall",
  "smallvec",
  "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "pdf-services"
+version = "1.0.0"
+dependencies = [
+ "actix-cors",
+ "actix-rt",
+ "actix-web",
+ "actix-web-httpauth",
+ "anyhow",
+ "async-trait",
+ "aws-config",
+ "aws-sdk-s3",
+ "base64 0.21.7",
+ "bytes",
+ "chrono",
+ "dotenv",
+ "flate2",
+ "futures",
+ "governor",
+ "image 0.24.9",
+ "minijinja",
+ "once_cell",
+ "prometheus",
+ "qrcode",
+ "rand 0.8.5",
+ "reqwest",
+ "rust_xlsxwriter",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-actix-web",
+ "tracing-subscriber",
+ "uuid",
+ "zstd",
 ]
 
 [[package]]
