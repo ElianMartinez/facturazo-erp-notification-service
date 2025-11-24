@@ -2,37 +2,37 @@
 //!
 //! Multi-format document generation: PDF, Excel, CSV
 
+use crate::domain::document::DocumentFormat;
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use uuid::Uuid;
-use crate::domain::document::DocumentFormat;
 
 // PDF generators
-pub mod typst_generator;
 pub mod invoice_generator;
+pub mod qr_generator;
 pub mod quotation_generator;
 pub mod report_generator;
-pub mod qr_generator;
+pub mod typst_generator;
 
 // Excel & CSV generators
-pub mod excel_generator;
 pub mod csv_generator;
+pub mod excel_generator;
 
 // Template management
 pub mod template_manager;
 
 // Re-exports
-pub use typst_generator::TypstGenerator;
+pub use csv_generator::CsvGenerator;
+pub use excel_generator::ExcelGenerator;
 pub use invoice_generator::InvoiceGenerator;
+pub use qr_generator::QRGenerator;
 pub use quotation_generator::QuotationGenerator;
 pub use report_generator::ReportGenerator;
-pub use qr_generator::QRGenerator;
-pub use excel_generator::ExcelGenerator;
-pub use csv_generator::CsvGenerator;
 pub use template_manager::TemplateManager;
+pub use typst_generator::TypstGenerator;
 
 /// Document generator trait
 #[async_trait::async_trait]
@@ -132,17 +132,17 @@ impl GeneratorFactory {
         // Register PDF generators
         pdf_generators.insert(
             DocumentType::Invoice,
-            Box::new(InvoiceGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>
+            Box::new(InvoiceGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>,
         );
 
         pdf_generators.insert(
             DocumentType::Quotation,
-            Box::new(QuotationGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>
+            Box::new(QuotationGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>,
         );
 
         pdf_generators.insert(
             DocumentType::Report,
-            Box::new(ReportGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>
+            Box::new(ReportGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>,
         );
 
         // Create Excel and CSV generators
@@ -186,11 +186,13 @@ impl GeneratorFactory {
         let (document_bytes, mime_type) = match format {
             DocumentFormat::Pdf => {
                 // Get PDF generator
-                let generator = self.get_pdf_generator(doc_type)
-                    .ok_or_else(|| anyhow::anyhow!("No PDF generator for document type: {:?}", doc_type))?;
+                let generator = self.get_pdf_generator(doc_type).ok_or_else(|| {
+                    anyhow::anyhow!("No PDF generator for document type: {:?}", doc_type)
+                })?;
 
                 // Get template
-                let template = self.template_manager
+                let template = self
+                    .template_manager
                     .get_template(doc_type.template_name())
                     .await?;
 
@@ -211,17 +213,20 @@ impl GeneratorFactory {
                 }
 
                 (pdf_bytes, "application/pdf")
-            },
+            }
             DocumentFormat::Excel => {
                 // Generate Excel
                 let excel_bytes = self.excel_generator.generate("", &data).await?;
-                (excel_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            },
+                (
+                    excel_bytes,
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            }
             DocumentFormat::Csv => {
                 // Generate CSV
                 let csv_bytes = self.csv_generator.generate("", &data).await?;
                 (csv_bytes, "text/csv")
-            },
+            }
             DocumentFormat::Html => {
                 return Err(anyhow::anyhow!("HTML format not yet implemented"));
             }

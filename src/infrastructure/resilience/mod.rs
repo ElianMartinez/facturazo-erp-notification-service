@@ -7,17 +7,17 @@
 //! - Health Checks: Monitor dependency health
 
 mod circuit_breaker;
+pub mod health;
 mod rate_limiter;
 mod retry;
-pub mod health;
 
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
+pub use health::{DependencyHealth, DependencyStatus, HealthChecker, HealthStatus};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, TenantRateLimiter};
-pub use retry::{RetryPolicy, RetryConfig, with_retry};
-pub use health::{HealthChecker, HealthStatus, DependencyHealth, DependencyStatus};
+pub use retry::{with_retry, RetryConfig, RetryPolicy};
 
-use std::sync::Arc;
 use anyhow::Result;
+use std::sync::Arc;
 
 /// Resilience configuration
 #[derive(Debug, Clone)]

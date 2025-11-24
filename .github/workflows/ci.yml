@@ -9,6 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  PATH: /home/runner/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 
 jobs:
   # ===========================================
@@ -21,11 +22,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Rust
+      - name: Setup Rust environment
         run: |
-          source $HOME/.cargo/env
+          echo "Setting up Rust environment..."
+          export PATH="/home/runner/.cargo/bin:$PATH"
           rustc --version
           cargo --version
+          echo "PATH=$PATH" >> $GITHUB_ENV
 
       - name: Cache cargo registry
         uses: actions/cache@v4

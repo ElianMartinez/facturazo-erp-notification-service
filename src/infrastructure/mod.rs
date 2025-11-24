@@ -2,15 +2,15 @@
 //!
 //! Contains implementations of external services and repositories
 
-pub mod database;
 pub mod cache;
-pub mod storage;
+pub mod database;
 pub mod generators;
-pub mod notifications;
-pub mod persistence;
-pub mod observability;
 pub mod kafka;
+pub mod notifications;
+pub mod observability;
+pub mod persistence;
 pub mod resilience;
+pub mod storage;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -26,16 +26,14 @@ impl Infrastructure {
     /// Create new infrastructure container
     pub async fn new(config: &crate::config::AppConfig) -> Result<Self> {
         // Initialize database
-        let database = Arc::new(
-            database::Database::new(&config.database.path).await?
-        );
+        let database = Arc::new(database::Database::new(&config.database.path).await?);
 
         // Initialize cache
         let cache = Arc::new(cache::CacheManager::new());
 
         // Initialize resilience manager
         let resilience = Arc::new(resilience::ResilienceManager::new(
-            resilience::ResilienceConfig::default()
+            resilience::ResilienceConfig::default(),
         ));
 
         Ok(Self {

@@ -1,7 +1,7 @@
-use anyhow::{Result, Context};
-use serde_json::Value;
-use crate::templates::template_trait::{TypstTemplate, utils};
 use crate::templates::template_models::{ReceiptData, ReceiptItem};
+use crate::templates::template_trait::{utils, TypstTemplate};
+use anyhow::{Context, Result};
+use serde_json::Value;
 
 pub struct ReceiptTemplate;
 
@@ -29,12 +29,13 @@ impl ReceiptTemplate {
 
 impl TypstTemplate for ReceiptTemplate {
     fn generate(&self, data: &Value) -> Result<String> {
-        let receipt: ReceiptData = serde_json::from_value(data.clone())
-            .context("Error deserializando datos de recibo")?;
+        let receipt: ReceiptData =
+            serde_json::from_value(data.clone()).context("Error deserializando datos de recibo")?;
 
         let vendor = &receipt.vendor;
 
-        let content = format!(r#"#set document(title: "Recibo #{}", author: "{}")
+        let content = format!(
+            r#"#set document(title: "Recibo #{}", author: "{}")
 #set page(paper: "a5", margin: 1.5cm)
 #set text(font: "Arial", size: 10pt)
 
@@ -130,7 +131,10 @@ impl TypstTemplate for ReceiptTemplate {
             vendor.name,
             // Header
             utils::escape_typst(&vendor.name),
-            utils::escape_typst(&format!("{}, {}", vendor.address.city, vendor.address.country)),
+            utils::escape_typst(&format!(
+                "{}, {}",
+                vendor.address.city, vendor.address.country
+            )),
             vendor.phone.as_deref().unwrap_or(""),
             // Receipt info
             receipt.receipt_number,
@@ -164,7 +168,7 @@ impl TypstTemplate for ReceiptTemplate {
             "items",
             "total",
             "payment_method",
-            "currency"
+            "currency",
         ];
 
         for field in required {

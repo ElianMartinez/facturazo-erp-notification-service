@@ -1,9 +1,9 @@
-use actix_web::{web, HttpResponse, HttpRequest, Result, HttpMessage};
+use super::handlers::AuthInfo;
+use super::state::ApiState;
+use crate::templates::{InvoiceData, TemplateData, TemplateEngine};
+use actix_web::{web, HttpMessage, HttpRequest, HttpResponse, Result};
 use serde_json::json;
 use uuid::Uuid;
-use crate::templates::{TemplateEngine, TemplateData, InvoiceData};
-use super::state::ApiState;
-use super::handlers::AuthInfo;
 
 pub async fn generate_pdf_from_template(
     req: HttpRequest,
@@ -12,67 +12,79 @@ pub async fn generate_pdf_from_template(
 ) -> Result<HttpResponse> {
     let (tenant_id, user_id) = extract_tenant_user_helper(&req);
 
-    let template_id = data.get("template_id")
+    let template_id = data
+        .get("template_id")
         .and_then(|v| v.as_str())
         .unwrap_or("fiscal_electronic");
 
     let template_data = match data.get("template_type").and_then(|v| v.as_str()) {
         Some("invoice") => {
-            let invoice_data: InvoiceData = serde_json::from_value(
-                data.get("data").cloned().unwrap_or(json!({}))
-            ).map_err(|e| actix_web::error::ErrorBadRequest(format!("Invalid invoice data: {}", e)))?;
+            let invoice_data: InvoiceData =
+                serde_json::from_value(data.get("data").cloned().unwrap_or(json!({}))).map_err(
+                    |e| actix_web::error::ErrorBadRequest(format!("Invalid invoice data: {}", e)),
+                )?;
             TemplateData::Invoice(invoice_data)
-        },
+        }
         Some("report") => {
-            let report_data = serde_json::from_value(
-                data.get("data").cloned().unwrap_or(json!({}))
-            ).map_err(|e| actix_web::error::ErrorBadRequest(format!("Invalid report data: {}", e)))?;
+            let report_data =
+                serde_json::from_value(data.get("data").cloned().unwrap_or(json!({}))).map_err(
+                    |e| actix_web::error::ErrorBadRequest(format!("Invalid report data: {}", e)),
+                )?;
             TemplateData::Report(report_data)
-        },
+        }
         Some("receipt") => {
-            let receipt_data = serde_json::from_value(
-                data.get("data").cloned().unwrap_or(json!({}))
-            ).map_err(|e| actix_web::error::ErrorBadRequest(format!("Invalid receipt data: {}", e)))?;
+            let receipt_data =
+                serde_json::from_value(data.get("data").cloned().unwrap_or(json!({}))).map_err(
+                    |e| actix_web::error::ErrorBadRequest(format!("Invalid receipt data: {}", e)),
+                )?;
             TemplateData::Receipt(receipt_data)
-        },
+        }
         _ => {
-            let custom_data = data.get("data")
+            let custom_data = data
+                .get("data")
                 .and_then(|v| v.as_object())
-                .map(|obj| {
-                    obj.iter()
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect()
-                })
+                .map(|obj| obj.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
                 .unwrap_or_default();
             TemplateData::Custom(custom_data)
         }
     };
 
-    let engine = TemplateEngine::new(
-        "templates".to_string(),
-        "facturas".to_string(),
-    );
+    let engine = TemplateEngine::new("templates".to_string(), "facturas".to_string());
 
-    let output_filename = data.get("output_filename")
+    let output_filename = data
+        .get("output_filename")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    match engine.generate_pdf(template_id, template_data, output_filename).await {
+    match engine
+        .generate_pdf(template_id, template_data, output_filename)
+        .await
+    {
         Ok(pdf_path) => {
             let document_id = Uuid::new_v4();
 
             let org_id = format!("tenant_{}", tenant_id);
             let key = format!("documents/{}/{}.pdf", org_id, document_id);
 
-            let pdf_bytes = tokio::fs::read(&pdf_path).await
-                .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Failed to read PDF: {}", e)))?;
+            let pdf_bytes = tokio::fs::read(&pdf_path).await.map_err(|e| {
+                actix_web::error::ErrorInternalServerError(format!("Failed to read PDF: {}", e))
+            })?;
 
-            let url = state.s3_client.put_object(
-                &state.config.s3_bucket_documents,
-                &key,
-                pdf_bytes,
-                "application/pdf",
-            ).await.map_err(|e| actix_web::error::ErrorInternalServerError(format!("Failed to upload to S3: {}", e)))?;
+            let url = state
+                .s3_client
+                .put_object(
+                    &state.config.s3_bucket_documents,
+                    &key,
+                    pdf_bytes,
+                    "application/pdf",
+                )
+                .await
+                .map_err(|e| {
+                    actix_web::error::ErrorInternalServerError(format!(
+                        "Failed to upload to S3: {}",
+                        e
+                    ))
+                })?;
 
             let _ = tokio::fs::remove_file(&pdf_path).await;
 
@@ -82,7 +94,7 @@ pub async fn generate_pdf_from_template(
                 "url": url,
                 "local_path": pdf_path
             })))
-        },
+        }
         Err(e) => {
             tracing::error!("Failed to generate PDF from template: {:?}", e);
             Ok(HttpResponse::InternalServerError().json(json!({
@@ -93,10 +105,7 @@ pub async fn generate_pdf_from_template(
     }
 }
 
-pub async fn list_templates(
-    _req: HttpRequest,
-    state: web::Data<ApiState>,
-) -> Result<HttpResponse> {
+pub async fn list_templates(_req: HttpRequest, state: web::Data<ApiState>) -> Result<HttpResponse> {
     use std::fs;
     use std::path::Path;
 
@@ -144,28 +153,31 @@ pub async fn preview_template(
 
     let sample_data = get_sample_data_for_template(&template_id);
 
-    let engine = TemplateEngine::new(
-        "templates".to_string(),
-        "temp".to_string(),
-    );
+    let engine = TemplateEngine::new("templates".to_string(), "temp".to_string());
 
-    match engine.generate_pdf(&template_id, sample_data, Some(format!("preview_{}", template_id))).await {
+    match engine
+        .generate_pdf(
+            &template_id,
+            sample_data,
+            Some(format!("preview_{}", template_id)),
+        )
+        .await
+    {
         Ok(pdf_path) => {
-            let pdf_bytes = tokio::fs::read(&pdf_path).await
-                .map_err(|e| actix_web::error::ErrorInternalServerError(format!("Failed to read PDF: {}", e)))?;
+            let pdf_bytes = tokio::fs::read(&pdf_path).await.map_err(|e| {
+                actix_web::error::ErrorInternalServerError(format!("Failed to read PDF: {}", e))
+            })?;
 
             let _ = tokio::fs::remove_file(&pdf_path).await;
 
             Ok(HttpResponse::Ok()
                 .content_type("application/pdf")
                 .body(pdf_bytes))
-        },
-        Err(e) => {
-            Ok(HttpResponse::InternalServerError().json(json!({
-                "error": "Failed to generate preview",
-                "details": e.to_string()
-            })))
         }
+        Err(e) => Ok(HttpResponse::InternalServerError().json(json!({
+            "error": "Failed to generate preview",
+            "details": e.to_string()
+        }))),
     }
 }
 
@@ -258,13 +270,15 @@ fn get_sample_data_for_template(template_id: &str) -> TemplateData {
 }
 
 fn extract_tenant_user_helper(req: &HttpRequest) -> (i64, i64) {
-    let tenant_id = req.headers()
+    let tenant_id = req
+        .headers()
         .get("X-Tenant-Id")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(1);
 
-    let user_id = req.headers()
+    let user_id = req
+        .headers()
         .get("X-User-Id")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<i64>().ok())

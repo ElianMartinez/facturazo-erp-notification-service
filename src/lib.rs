@@ -4,12 +4,12 @@
 //! with support for PDF, Excel, CSV formats and Email, WhatsApp channels.
 
 // New architecture modules
-pub mod config;
-pub mod kafka;
 pub mod application;
+pub mod common;
+pub mod config;
 pub mod domain;
 pub mod infrastructure;
-pub mod common;
+pub mod kafka;
 
 // Legacy modules (kept for compatibility during migration)
 pub mod api;
@@ -20,14 +20,13 @@ pub mod templates;
 
 // Re-export commonly used types from legacy modules
 pub use models::{
-    DocumentRequest, DocumentResponse, DocumentStatus,
-    InvoiceRequest, ReportRequest,
-    Priority, OutputFormat,
+    DocumentRequest, DocumentResponse, DocumentStatus, InvoiceRequest, OutputFormat, Priority,
+    ReportRequest,
 };
 
-pub use generators::{PdfGenerator, ExcelGenerator};
-pub use templates::{TemplateEngine, TemplateData, InvoiceData, ReportData, ReceiptData};
+pub use generators::{ExcelGenerator, PdfGenerator};
 pub use storage::s3::S3Client;
+pub use templates::{InvoiceData, ReceiptData, ReportData, TemplateData, TemplateEngine};
 
 // Re-export new architecture types
 pub use config::AppConfig;

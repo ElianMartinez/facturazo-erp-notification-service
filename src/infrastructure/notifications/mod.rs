@@ -2,17 +2,17 @@
 //!
 //! This module contains implementations for various notification channels
 
-pub mod evolution_api;
 pub mod email;
+pub mod evolution_api;
 
 use anyhow::Result;
 use async_trait::async_trait;
 
 // Re-export main types
-pub use evolution_api::EvolutionAPIClient;
-pub use evolution_api::EvolutionAPIClient as EvolutionApiClient;  // Alias
-pub use email::EmailService;
 pub use email::EmailAttachment;
+pub use email::EmailService;
+pub use evolution_api::EvolutionAPIClient;
+pub use evolution_api::EvolutionAPIClient as EvolutionApiClient; // Alias
 
 /// Trait for notification services
 #[async_trait]
@@ -63,13 +63,9 @@ impl WhatsAppService {
         amount: String,
         pdf_bytes: Vec<u8>,
     ) -> Result<String> {
-        self.client.send_invoice_notification(
-            phone,
-            invoice_number,
-            ncf,
-            amount,
-            pdf_bytes,
-        ).await
+        self.client
+            .send_invoice_notification(phone, invoice_number, ncf, amount, pdf_bytes)
+            .await
     }
 }
 
@@ -92,12 +88,14 @@ impl NotificationService for WhatsAppService {
         // Send attachments if any
         for attachment in &message.attachments {
             if attachment.content_type == "application/pdf" {
-                self.client.send_pdf(
-                    recipient.to_string(),
-                    attachment.content.clone(),
-                    attachment.filename.clone(),
-                    message.subject.clone().unwrap_or_default(),
-                ).await?;
+                self.client
+                    .send_pdf(
+                        recipient.to_string(),
+                        attachment.content.clone(),
+                        attachment.filename.clone(),
+                        message.subject.clone().unwrap_or_default(),
+                    )
+                    .await?;
             }
         }
 

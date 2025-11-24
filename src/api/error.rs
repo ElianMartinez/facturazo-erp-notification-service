@@ -36,11 +36,10 @@ impl fmt::Display for ApiError {
 
 impl ResponseError for ApiError {
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code)
-            .json(serde_json::json!({
-                "error": self.message,
-                "status": self.status_code.as_u16()
-            }))
+        HttpResponse::build(self.status_code).json(serde_json::json!({
+            "error": self.message,
+            "status": self.status_code.as_u16()
+        }))
     }
 
     fn status_code(&self) -> StatusCode {
@@ -65,7 +64,6 @@ impl From<serde_json::Error> for ApiError {
         ApiError::bad_request(err.to_string())
     }
 }
-
 
 impl From<actix_web::Error> for ApiError {
     fn from(err: actix_web::Error) -> Self {

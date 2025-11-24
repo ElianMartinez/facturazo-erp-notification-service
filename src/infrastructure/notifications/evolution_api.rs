@@ -2,11 +2,11 @@
 //!
 //! This module provides integration with EvolutionAPI v2 for WhatsApp messaging
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tracing::{info, error};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use tracing::{error, info};
 
 /// EvolutionAPI client for WhatsApp messaging
 pub struct EvolutionAPIClient {
@@ -133,7 +133,8 @@ impl EvolutionAPIClient {
 
         info!("Sending WhatsApp text message to {}", request.number);
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("apikey", &self.api_key)
             .header("Content-Type", "application/json")
@@ -149,7 +150,8 @@ impl EvolutionAPIClient {
             error!("EvolutionAPI error: {} - {}", status, body);
             // Try to parse error response
             if let Ok(err_response) = serde_json::from_str::<EvolutionAPIErrorResponse>(&body) {
-                let msg = err_response.response
+                let msg = err_response
+                    .response
                     .and_then(|r| r.message)
                     .or(err_response.error)
                     .unwrap_or_else(|| body.clone());
@@ -158,8 +160,8 @@ impl EvolutionAPIClient {
             anyhow::bail!("Failed to send WhatsApp message: {}", body);
         }
 
-        let api_response: EvolutionAPIResponse = serde_json::from_str(&body)
-            .context("Failed to parse EvolutionAPI response")?;
+        let api_response: EvolutionAPIResponse =
+            serde_json::from_str(&body).context("Failed to parse EvolutionAPI response")?;
 
         let message_id = api_response.key.id;
 
@@ -169,11 +171,12 @@ impl EvolutionAPIClient {
     }
 
     /// Send a PDF document via WhatsApp
-    pub async fn send_pdf(&self,
+    pub async fn send_pdf(
+        &self,
         number: String,
         pdf_bytes: Vec<u8>,
         filename: String,
-        caption: String
+        caption: String,
     ) -> Result<String> {
         let base64_content = BASE64.encode(&pdf_bytes);
 
@@ -196,9 +199,13 @@ impl EvolutionAPIClient {
     pub async fn send_media(&self, request: SendMediaRequest) -> Result<String> {
         let url = format!("{}/message/sendMedia/{}", self.base_url, self.instance);
 
-        info!("Sending WhatsApp media to {}: {}", request.number, request.file_name);
+        info!(
+            "Sending WhatsApp media to {}: {}",
+            request.number, request.file_name
+        );
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("apikey", &self.api_key)
             .header("Content-Type", "application/json")
@@ -213,7 +220,8 @@ impl EvolutionAPIClient {
         if !status.is_success() {
             error!("EvolutionAPI error: {} - {}", status, body);
             if let Ok(err_response) = serde_json::from_str::<EvolutionAPIErrorResponse>(&body) {
-                let msg = err_response.response
+                let msg = err_response
+                    .response
                     .and_then(|r| r.message)
                     .or(err_response.error)
                     .unwrap_or_else(|| body.clone());
@@ -222,8 +230,8 @@ impl EvolutionAPIClient {
             anyhow::bail!("Failed to send WhatsApp media: {}", body);
         }
 
-        let api_response: EvolutionAPIResponse = serde_json::from_str(&body)
-            .context("Failed to parse EvolutionAPI response")?;
+        let api_response: EvolutionAPIResponse =
+            serde_json::from_str(&body).context("Failed to parse EvolutionAPI response")?;
 
         let message_id = api_response.key.id;
 
@@ -268,21 +276,20 @@ impl EvolutionAPIClient {
         let caption = format!("Factura {} - NCF: {}", invoice_number, ncf);
         let filename = format!("{}.pdf", invoice_number);
 
-        let pdf_id = self.send_pdf(
-            phone,
-            pdf_bytes,
-            filename,
-            caption,
-        ).await?;
+        let pdf_id = self.send_pdf(phone, pdf_bytes, filename, caption).await?;
 
         Ok(format!("text:{},pdf:{}", text_id, pdf_id))
     }
 
     /// Check if instance is connected
     pub async fn is_connected(&self) -> Result<bool> {
-        let url = format!("{}/instance/connectionState/{}", self.base_url, self.instance);
+        let url = format!(
+            "{}/instance/connectionState/{}",
+            self.base_url, self.instance
+        );
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("apikey", &self.api_key)
             .send()
@@ -336,22 +343,23 @@ impl EvolutionAPIClient {
 
 /// Normalize Dominican Republic phone numbers
 pub fn normalize_dominican_phone(phone: &str) -> String {
-    let digits_only: String = phone.chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect();
+    let digits_only: String = phone.chars().filter(|c| c.is_ascii_digit()).collect();
 
     // Check if it's a valid Dominican number (809, 829, 849)
-    if digits_only.starts_with("1809") ||
-       digits_only.starts_with("1829") ||
-       digits_only.starts_with("1849") {
+    if digits_only.starts_with("1809")
+        || digits_only.starts_with("1829")
+        || digits_only.starts_with("1849")
+    {
         digits_only
-    } else if digits_only.starts_with("809") ||
-              digits_only.starts_with("829") ||
-              digits_only.starts_with("849") {
+    } else if digits_only.starts_with("809")
+        || digits_only.starts_with("829")
+        || digits_only.starts_with("849")
+    {
         format!("1{}", digits_only)
-    } else if digits_only.starts_with("+1809") ||
-              digits_only.starts_with("+1829") ||
-              digits_only.starts_with("+1849") {
+    } else if digits_only.starts_with("+1809")
+        || digits_only.starts_with("+1829")
+        || digits_only.starts_with("+1849")
+    {
         digits_only.chars().skip(1).collect()
     } else {
         // Return as is if not a Dominican number
@@ -368,9 +376,9 @@ pub fn is_valid_dominican_phone(phone: &str) -> bool {
         return false;
     }
 
-    normalized.starts_with("1809") ||
-    normalized.starts_with("1829") ||
-    normalized.starts_with("1849")
+    normalized.starts_with("1809")
+        || normalized.starts_with("1829")
+        || normalized.starts_with("1849")
 }
 
 #[cfg(test)]

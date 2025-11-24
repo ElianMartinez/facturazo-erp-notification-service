@@ -1,7 +1,7 @@
-use anyhow::{Result, Context};
-use serde_json::Value;
-use crate::templates::template_trait::{TypstTemplate, utils};
 use crate::templates::template_models::{InvoiceData, InvoiceItem};
+use crate::templates::template_trait::{utils, TypstTemplate};
+use anyhow::{Context, Result};
+use serde_json::Value;
 
 pub struct SimpleInvoiceTemplate;
 
@@ -37,7 +37,8 @@ impl TypstTemplate for SimpleInvoiceTemplate {
         let client = &invoice.client_info;
         let totals = &invoice.totals;
 
-        let content = format!(r#"#set document(title: "Factura - {}", author: "{}")
+        let content = format!(
+            r#"#set document(title: "Factura - {}", author: "{}")
 #set page(paper: "us-letter", margin: 2cm)
 #set text(font: "Arial", size: 11pt)
 
@@ -120,7 +121,10 @@ impl TypstTemplate for SimpleInvoiceTemplate {
             company.name,
             // Header
             utils::escape_typst(&company.name),
-            utils::escape_typst(&format!("{}, {}", company.address.city, company.address.country)),
+            utils::escape_typst(&format!(
+                "{}, {}",
+                company.address.city, company.address.country
+            )),
             company.phone.as_deref().unwrap_or(""),
             utils::escape_typst(company.email.as_deref().unwrap_or("")),
             // Invoice info
@@ -131,20 +135,28 @@ impl TypstTemplate for SimpleInvoiceTemplate {
             utils::escape_typst(&client.name),
             client.tax_id,
             if let Some(address) = &client.address {
-                format!("Dirección: {}", utils::escape_typst(&format!("{}, {}",
-                    address.street, address.city)))
+                format!(
+                    "Dirección: {}",
+                    utils::escape_typst(&format!("{}, {}", address.street, address.city))
+                )
             } else {
                 String::new()
             },
             // Items
             self.format_items(&invoice.items),
             // Totals
-            totals.currency, totals.subtotal,
-            totals.currency, totals.tax_amount,
-            totals.currency, totals.total,
+            totals.currency,
+            totals.subtotal,
+            totals.currency,
+            totals.tax_amount,
+            totals.currency,
+            totals.total,
             // Notes
             if let Some(notes) = &invoice.notes {
-                format!("\n#v(15pt)\n#text(size: 10pt)[*Notas:* {}]", utils::escape_typst(notes))
+                format!(
+                    "\n#v(15pt)\n#text(size: 10pt)[*Notas:* {}]",
+                    utils::escape_typst(notes)
+                )
             } else {
                 String::new()
             }
@@ -163,7 +175,13 @@ impl TypstTemplate for SimpleInvoiceTemplate {
         }
 
         let obj = data.as_object().unwrap();
-        let required = vec!["invoice_number", "company_info", "client_info", "items", "totals"];
+        let required = vec![
+            "invoice_number",
+            "company_info",
+            "client_info",
+            "items",
+            "totals",
+        ];
 
         for field in required {
             if !obj.contains_key(field) {

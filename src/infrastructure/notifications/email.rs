@@ -2,11 +2,11 @@
 //!
 //! This module provides email sending capabilities using SMTP
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use lettre::message::{header, Attachment as LettreAttachment, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{Message, SmtpTransport, Transport};
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// SMTP email service
 pub struct EmailService {
@@ -72,12 +72,11 @@ impl EmailService {
                         .body(html.to_string()),
                 )
         } else {
-            MultiPart::mixed()
-                .singlepart(
-                    SinglePart::builder()
-                        .header(header::ContentType::TEXT_PLAIN)
-                        .body(body.to_string()),
-                )
+            MultiPart::mixed().singlepart(
+                SinglePart::builder()
+                    .header(header::ContentType::TEXT_PLAIN)
+                    .body(body.to_string()),
+            )
         };
 
         // Add attachments
@@ -204,7 +203,8 @@ impl EmailService {
             &body,
             Some(&html_body),
             vec![attachment],
-        ).await
+        )
+        .await
     }
 
     /// Test SMTP connection
@@ -227,7 +227,8 @@ impl EmailService {
                 .build()
         };
 
-        mailer.test_connection()
+        mailer
+            .test_connection()
             .context("Failed to test SMTP connection")
     }
 }
@@ -259,7 +260,8 @@ impl EmailService {
             })
             .collect();
 
-        self.send_email(to, subject, body, None, internal_attachments).await?;
+        self.send_email(to, subject, body, None, internal_attachments)
+            .await?;
         Ok(())
     }
 }

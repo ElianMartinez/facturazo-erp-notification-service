@@ -1,18 +1,16 @@
-use actix_web::{web, HttpResponse, HttpRequest, HttpMessage};
-use serde_json::json;
-use uuid::Uuid;
+use actix_web::{web, HttpMessage, HttpRequest, HttpResponse};
 use chrono::Utc;
 use flate2::read::GzDecoder;
+use serde_json::json;
 use std::io::Read;
+use uuid::Uuid;
 
-use crate::models::{
-    DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, Priority
-};
-use crate::generators::{PdfGenerator, ExcelGenerator};
+use super::error::ApiResult;
+use super::state::ApiState;
 use crate::application::commands::GenerateDocumentCommand;
 use crate::domain::document::{DocumentFormat, DocumentType as DomainDocType};
-use super::state::ApiState;
-use super::error::ApiResult;
+use crate::generators::{ExcelGenerator, PdfGenerator};
+use crate::models::{DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, Priority};
 
 /// Generate document synchronously (small documents only)
 pub async fn generate_sync(
@@ -21,8 +19,8 @@ pub async fn generate_sync(
     state: web::Data<ApiState>,
 ) -> ApiResult<HttpResponse> {
     // Extract tenant and user info
-    let (tenant_id, user_id) = crate::api::middleware::auth::extract_tenant_user(&req)
-        .unwrap_or((1, 1));
+    let (tenant_id, user_id) =
+        crate::api::middleware::auth::extract_tenant_user(&req).unwrap_or((1, 1));
 
     // Update metadata with tenant and user info
     data.metadata.tenant_id = tenant_id;
@@ -52,12 +50,11 @@ pub async fn generate_sync(
 
     // Generate document based on type
     let result = match document_type {
-        DocumentType::Invoice => {
-            generate_invoice_sync(&data.into_inner(), &state).await
-        },
-        DocumentType::Report if data_size < 100_000 => { // Small reports only
+        DocumentType::Invoice => generate_invoice_sync(&data.into_inner(), &state).await,
+        DocumentType::Report if data_size < 100_000 => {
+            // Small reports only
             generate_report_sync(&data.into_inner(), &state).await
-        },
+        }
         _ => {
             // All other types go to async queue
             return generate_async(req, data, state).await;
@@ -80,7 +77,7 @@ pub async fn generate_sync(
             // Document metadata would be saved to cache/S3 in production
 
             Ok(HttpResponse::Ok().json(response))
-        },
+        }
         Err(e) => {
             tracing::error!("Failed to generate document: {:?}", e);
             Ok(HttpResponse::InternalServerError().json(json!({
@@ -171,7 +168,8 @@ pub async fn upload_data(
     }
 
     // Check if compressed
-    let content_encoding = req.headers()
+    let content_encoding = req
+        .headers()
         .get("Content-Encoding")
         .and_then(|h| h.to_str().ok());
 
@@ -181,18 +179,21 @@ pub async fn upload_data(
             let mut decompressed = Vec::new();
             decoder.read_to_end(&mut decompressed)?;
             decompressed
-        },
+        }
         _ => body.to_vec(),
     };
 
     // Upload to S3 temp bucket
     let file_key = format!("uploads/{}/{}.json", user_id, Uuid::new_v4());
-    state.s3_client.put_object(
-        &state.config.s3_bucket_temp,
-        &file_key,
-        decompressed,
-        "application/json",
-    ).await?;
+    state
+        .s3_client
+        .put_object(
+            &state.config.s3_bucket_temp,
+            &file_key,
+            decompressed,
+            "application/json",
+        )
+        .await?;
 
     // Return reference
     Ok(HttpResponse::Ok().json(json!({
@@ -231,11 +232,14 @@ pub async fn download_document(
     let key = format!("documents/{}.pdf", document_id);
 
     // Generate presigned URL
-    let presigned = state.s3_client.create_presigned_url(
-        &state.config.s3_bucket_documents,
-        &key,
-        3600, // 1 hour
-    ).await?;
+    let presigned = state
+        .s3_client
+        .create_presigned_url(
+            &state.config.s3_bucket_documents,
+            &key,
+            3600, // 1 hour
+        )
+        .await?;
 
     Ok(HttpResponse::Found()
         .append_header(("Location", presigned))
@@ -266,7 +270,9 @@ async fn generate_invoice_sync(
     let result = state.document_orchestrator.execute(command).await?;
 
     // Return URL or file path
-    result.storage_url.ok_or_else(|| anyhow::anyhow!("No storage URL returned"))
+    result
+        .storage_url
+        .ok_or_else(|| anyhow::anyhow!("No storage URL returned"))
 }
 
 async fn generate_report_sync(
@@ -291,18 +297,22 @@ async fn generate_report_sync(
     let result = state.document_orchestrator.execute(command).await?;
 
     // Return URL or file path
-    result.storage_url.ok_or_else(|| anyhow::anyhow!("No storage URL returned"))
+    result
+        .storage_url
+        .ok_or_else(|| anyhow::anyhow!("No storage URL returned"))
 }
 
 pub fn extract_tenant_user(req: &HttpRequest) -> (i64, i64) {
     // Try to get from headers or extensions (set by auth middleware)
-    let tenant_id = req.headers()
+    let tenant_id = req
+        .headers()
         .get("X-Tenant-Id")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<i64>().ok())
         .unwrap_or(0);
 
-    let user_id = req.headers()
+    let user_id = req
+        .headers()
         .get("X-User-Id")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<i64>().ok())
@@ -351,8 +361,14 @@ async fn process_document_async(
         DocumentType::Invoice => (DomainDocType::Invoice, DocumentFormat::Pdf),
         DocumentType::Report => (DomainDocType::Report, DocumentFormat::Excel),
         DocumentType::Receipt => (DomainDocType::Receipt, DocumentFormat::Pdf),
-        DocumentType::Certificate => (DomainDocType::Custom("certificate".to_string()), DocumentFormat::Pdf),
-        DocumentType::Statement => (DomainDocType::Custom("statement".to_string()), DocumentFormat::Pdf),
+        DocumentType::Certificate => (
+            DomainDocType::Custom("certificate".to_string()),
+            DocumentFormat::Pdf,
+        ),
+        DocumentType::Statement => (
+            DomainDocType::Custom("statement".to_string()),
+            DocumentFormat::Pdf,
+        ),
         DocumentType::Custom(name) => (DomainDocType::Custom(name.clone()), DocumentFormat::Pdf),
     };
 

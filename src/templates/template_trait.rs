@@ -112,8 +112,8 @@ pub mod utils {
 
     /// Genera código QR y retorna la ruta del archivo
     pub fn generate_qr_code(data: &str, output_path: &str) -> Result<String> {
-        use qrcode::{QrCode, Color};
         use image::{ImageBuffer, Rgb};
+        use qrcode::{Color, QrCode};
 
         let code = QrCode::new(data)?;
         let width = code.width();

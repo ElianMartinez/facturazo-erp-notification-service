@@ -6,14 +6,16 @@
 
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::{info, warn, error, instrument};
+use tracing::{error, info, instrument, warn};
 
+use crate::application::commands::{GenerateDocumentCommand, Priority, SendNotificationCommand};
 use crate::domain::document::{DocumentFormat, DocumentType};
-use crate::infrastructure::generators::{GeneratorFactory, GenerationOptions, DocumentType as GenDocType};
+use crate::infrastructure::cache::CacheService;
+use crate::infrastructure::generators::{
+    DocumentType as GenDocType, GenerationOptions, GeneratorFactory,
+};
 use crate::infrastructure::notifications::{EmailService, EvolutionApiClient};
 use crate::infrastructure::storage::StorageService;
-use crate::infrastructure::cache::CacheService;
-use crate::application::commands::{GenerateDocumentCommand, SendNotificationCommand, Priority};
 
 /// Document generation orchestrator
 ///
@@ -65,9 +67,18 @@ impl DocumentOrchestrator {
         };
 
         // 3. Generate document
-        info!("Generating document: {:?} as {:?}", command.document_type, command.format);
-        let result = self.generator_factory
-            .generate(gen_doc_type, command.format.clone(), command.data.clone(), options)
+        info!(
+            "Generating document: {:?} as {:?}",
+            command.document_type, command.format
+        );
+        let result = self
+            .generator_factory
+            .generate(
+                gen_doc_type,
+                command.format.clone(),
+                command.data.clone(),
+                options,
+            )
             .await?;
 
         let document_bytes = result.document_bytes.clone();
@@ -86,7 +97,10 @@ impl DocumentOrchestrator {
             );
 
             info!("Storing document at: {}", path);
-            let url = self.storage.upload(&path, &document_bytes, &mime_type).await?;
+            let url = self
+                .storage
+                .upload(&path, &document_bytes, &mime_type)
+                .await?;
             Some(url)
         } else {
             None
@@ -166,12 +180,8 @@ impl NotificationOrchestrator {
         info!("Starting notification workflow");
 
         let result = match command.channel {
-            NotificationChannel::Email => {
-                self.send_email(&command).await?
-            }
-            NotificationChannel::Whatsapp => {
-                self.send_whatsapp(&command).await?
-            }
+            NotificationChannel::Email => self.send_email(&command).await?,
+            NotificationChannel::Whatsapp => self.send_whatsapp(&command).await?,
             NotificationChannel::Sms | NotificationChannel::InApp => {
                 warn!("Channel {:?} not implemented yet", command.channel);
                 NotificationResult {
@@ -187,21 +197,30 @@ impl NotificationOrchestrator {
     }
 
     async fn send_email(&self, command: &SendNotificationCommand) -> Result<NotificationResult> {
-        let email_service = self.email_service.as_ref()
+        let email_service = self
+            .email_service
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Email service not configured"))?;
 
         // Build email content from template or direct content
         let body = if let Some(template_id) = &command.template_id {
             // In production, load template and render with vars
-            format!("Template: {} with vars: {}", template_id, command.template_vars)
+            format!(
+                "Template: {} with vars: {}",
+                template_id, command.template_vars
+            )
         } else {
-            command.template_vars.get("body")
+            command
+                .template_vars
+                .get("body")
                 .and_then(|b| b.as_str())
                 .unwrap_or("")
                 .to_string()
         };
 
-        let subject = command.subject.clone()
+        let subject = command
+            .subject
+            .clone()
             .unwrap_or_else(|| "Notification".to_string());
 
         // Get attachments if document_id is provided
@@ -221,12 +240,9 @@ impl NotificationOrchestrator {
             vec![]
         };
 
-        email_service.send_with_attachments(
-            &command.recipient,
-            &subject,
-            &body,
-            attachments,
-        ).await?;
+        email_service
+            .send_with_attachments(&command.recipient, &subject, &body, attachments)
+            .await?;
 
         Ok(NotificationResult {
             notification_id: uuid::Uuid::new_v4().to_string(),
@@ -237,14 +253,20 @@ impl NotificationOrchestrator {
     }
 
     async fn send_whatsapp(&self, command: &SendNotificationCommand) -> Result<NotificationResult> {
-        let whatsapp_service = self.whatsapp_service.as_ref()
+        let whatsapp_service = self
+            .whatsapp_service
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("WhatsApp service not configured"))?;
 
-        let message = command.template_vars.get("message")
+        let message = command
+            .template_vars
+            .get("message")
             .and_then(|m| m.as_str())
             .unwrap_or("Notification");
 
-        whatsapp_service.send_simple_text(&command.recipient, message).await?;
+        whatsapp_service
+            .send_simple_text(&command.recipient, message)
+            .await?;
 
         // Send document if provided
         if let Some(doc_id) = &command.document_id {
@@ -253,12 +275,14 @@ impl NotificationOrchestrator {
                 // Convert to base64 and send as document
                 use base64::Engine;
                 let base64_doc = base64::engine::general_purpose::STANDARD.encode(&bytes);
-                whatsapp_service.send_document(
-                    &command.recipient,
-                    &base64_doc,
-                    &format!("{}.pdf", doc_id),
-                    "application/pdf",
-                ).await?;
+                whatsapp_service
+                    .send_document(
+                        &command.recipient,
+                        &base64_doc,
+                        &format!("{}.pdf", doc_id),
+                        "application/pdf",
+                    )
+                    .await?;
             }
         }
 

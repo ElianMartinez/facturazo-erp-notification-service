@@ -1,12 +1,12 @@
 //! Template manager with caching and versioning
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
+use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
-use parking_lot::RwLock;
 
 /// Template manager for document generation
 pub struct TemplateManager {
@@ -40,10 +40,7 @@ impl TemplateManager {
         // Update cache
         {
             let mut cache = self.cache.write();
-            cache.insert(
-                name.to_string(),
-                CachedTemplate::new(template.clone())
-            );
+            cache.insert(name.to_string(), CachedTemplate::new(template.clone()));
         }
 
         Ok(template)
@@ -51,13 +48,11 @@ impl TemplateManager {
 
     /// Load template from disk
     async fn load_template_from_disk(&self, name: &str) -> Result<String> {
-        let file_path = self.template_dir
-            .join(format!("{}.typ", name));
+        let file_path = self.template_dir.join(format!("{}.typ", name));
 
         if !file_path.exists() {
             // Try with .typst extension
-            let alt_path = self.template_dir
-                .join(format!("{}.typst", name));
+            let alt_path = self.template_dir.join(format!("{}.typst", name));
 
             if alt_path.exists() {
                 return Ok(fs::read_to_string(alt_path).await?);
@@ -78,14 +73,13 @@ impl TemplateManager {
             "report" => Ok(templates::REPORT.to_string()),
             "receipt" => Ok(templates::RECEIPT.to_string()),
             "credit_note" => Ok(templates::CREDIT_NOTE.to_string()),
-            _ => Err(anyhow::anyhow!("Template not found: {}", name))
+            _ => Err(anyhow::anyhow!("Template not found: {}", name)),
         }
     }
 
     /// Save template to disk
     pub async fn save_template(&self, name: &str, content: &str) -> Result<()> {
-        let file_path = self.template_dir
-            .join(format!("{}.typ", name));
+        let file_path = self.template_dir.join(format!("{}.typ", name));
 
         // Ensure directory exists
         fs::create_dir_all(&self.template_dir).await?;
@@ -96,10 +90,7 @@ impl TemplateManager {
         // Update cache
         {
             let mut cache = self.cache.write();
-            cache.insert(
-                name.to_string(),
-                CachedTemplate::new(content.to_string())
-            );
+            cache.insert(name.to_string(), CachedTemplate::new(content.to_string()));
         }
 
         Ok(())
@@ -116,11 +107,13 @@ impl TemplateManager {
             while let Some(entry) = entries.next_entry().await? {
                 let path = entry.path();
 
-                if path.extension().and_then(|s| s.to_str()) == Some("typ") ||
-                   path.extension().and_then(|s| s.to_str()) == Some("typst") {
+                if path.extension().and_then(|s| s.to_str()) == Some("typ")
+                    || path.extension().and_then(|s| s.to_str()) == Some("typst")
+                {
                     if let Some(name) = path.file_stem().and_then(|s| s.to_str()) {
                         let metadata = entry.metadata().await?;
-                        let modified = metadata.modified()?
+                        let modified = metadata
+                            .modified()?
                             .duration_since(std::time::UNIX_EPOCH)?
                             .as_secs();
 
@@ -138,7 +131,13 @@ impl TemplateManager {
         }
 
         // Add built-in templates
-        for name in &["invoice_fiscal", "quotation", "report", "receipt", "credit_note"] {
+        for name in &[
+            "invoice_fiscal",
+            "quotation",
+            "report",
+            "receipt",
+            "credit_note",
+        ] {
             if !templates.iter().any(|t| t.name == *name) {
                 templates.push(TemplateInfo {
                     name: name.to_string(),
@@ -164,9 +163,7 @@ impl TemplateManager {
         let cache = self.cache.read();
         CacheStats {
             templates_cached: cache.len(),
-            total_size: cache.values()
-                .map(|t| t.content.len())
-                .sum(),
+            total_size: cache.values().map(|t| t.content.len()).sum(),
         }
     }
 }
@@ -223,9 +220,9 @@ pub struct TemplateVersion {
 
 impl TemplateVersion {
     pub fn new(content: &str, created_by: Option<String>, description: Option<String>) -> Self {
-        use ring::digest;
-        use base64::Engine;
         use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine;
+        use ring::digest;
 
         let hash = digest::digest(&digest::SHA256, content.as_bytes());
         let content_hash = URL_SAFE_NO_PAD.encode(hash.as_ref());
@@ -289,7 +286,10 @@ mod tests {
         let manager = TemplateManager::new(temp_dir.path().to_path_buf());
 
         // Save a template
-        manager.save_template("test", "Test template content").await.unwrap();
+        manager
+            .save_template("test", "Test template content")
+            .await
+            .unwrap();
 
         // Get template (should be cached)
         let template = manager.get_template("test").await.unwrap();
@@ -313,7 +313,7 @@ mod tests {
         let version = TemplateVersion::new(
             "template content",
             Some("test_user".to_string()),
-            Some("Initial version".to_string())
+            Some("Initial version".to_string()),
         );
 
         assert!(version.version.starts_with("v"));

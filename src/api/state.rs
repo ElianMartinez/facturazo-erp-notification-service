@@ -1,13 +1,13 @@
-use std::sync::Arc;
+use governor::{clock::DefaultClock, state::keyed::DashMapStateStore, Quota, RateLimiter};
 use std::path::PathBuf;
-use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DashMapStateStore};
+use std::sync::Arc;
 
-use crate::templates::TemplateManager;
-use crate::storage::s3::S3Client;
+use crate::application::orchestrators::DocumentOrchestrator;
+use crate::infrastructure::cache::CacheService;
 use crate::infrastructure::generators::GeneratorFactory;
 use crate::infrastructure::storage::StorageService;
-use crate::infrastructure::cache::CacheService;
-use crate::application::orchestrators::DocumentOrchestrator;
+use crate::storage::s3::S3Client;
+use crate::templates::TemplateManager;
 
 // Key format: "tenant_id:user_id"
 pub type KeyedRateLimiter = Arc<RateLimiter<String, DashMapStateStore<String>, DefaultClock>>;
@@ -39,8 +39,8 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
-            max_sync_size_bytes: 1_048_576,      // 1MB
-            max_upload_size_bytes: 104_857_600,  // 100MB
+            max_sync_size_bytes: 1_048_576,     // 1MB
+            max_upload_size_bytes: 104_857_600, // 100MB
             rate_limit_per_minute: 100,
             rate_limit_burst: 20,
             sync_timeout_ms: 5000,
@@ -59,13 +59,17 @@ impl ApiState {
         // Initialize template manager
         let template_manager = Arc::new(TemplateManager::new(
             "templates".to_string(),
-            "output".to_string()
+            "output".to_string(),
         ));
 
         // Initialize rate limiter
-        let quota = Quota::per_minute(std::num::NonZeroU32::new(config.rate_limit_per_minute).unwrap())
-            .allow_burst(std::num::NonZeroU32::new(config.rate_limit_burst).unwrap());
-        let rate_limiter = Arc::new(RateLimiter::dashmap_with_clock(quota, &DefaultClock::default()));
+        let quota =
+            Quota::per_minute(std::num::NonZeroU32::new(config.rate_limit_per_minute).unwrap())
+                .allow_burst(std::num::NonZeroU32::new(config.rate_limit_burst).unwrap());
+        let rate_limiter = Arc::new(RateLimiter::dashmap_with_clock(
+            quota,
+            &DefaultClock::default(),
+        ));
 
         // Initialize new infrastructure components
         let work_dir = PathBuf::from("./work");
@@ -73,7 +77,7 @@ impl ApiState {
         let cache_service = Arc::new(CacheService::new());
         let storage_service = Arc::new(StorageService::new(
             PathBuf::from("./storage"),
-            config.s3_bucket_documents.clone()
+            config.s3_bucket_documents.clone(),
         ));
 
         // Initialize document orchestrator

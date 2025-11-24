@@ -1,10 +1,10 @@
 //! Invoice PDF generator with Dominican Republic fiscal compliance
 
+use super::typst_generator::helpers::format_number;
+use super::{DocumentGenerator, DocumentType, TypstGenerator};
 use anyhow::Result;
 use serde_json::Value;
 use std::path::PathBuf;
-use super::{DocumentGenerator, DocumentType, TypstGenerator};
-use super::typst_generator::helpers::format_number;
 
 /// Invoice PDF generator
 pub struct InvoiceGenerator {
@@ -204,25 +204,33 @@ impl DocumentGenerator for InvoiceGenerator {
         if let Some(obj) = invoice_data.as_object_mut() {
             // Format currency values
             if let Some(subtotal) = obj.get("subtotal").and_then(|v| v.as_f64()) {
-                obj.insert("subtotal".to_string(),
-                    serde_json::json!(format_number(subtotal, 2)));
+                obj.insert(
+                    "subtotal".to_string(),
+                    serde_json::json!(format_number(subtotal, 2)),
+                );
             }
 
             if let Some(total) = obj.get("total_amount").and_then(|v| v.as_f64()) {
-                obj.insert("total_amount".to_string(),
-                    serde_json::json!(format_number(total, 2)));
+                obj.insert(
+                    "total_amount".to_string(),
+                    serde_json::json!(format_number(total, 2)),
+                );
             }
 
             if let Some(itbis) = obj.get("itbis_amount").and_then(|v| v.as_f64()) {
-                obj.insert("itbis_amount".to_string(),
-                    serde_json::json!(format_number(itbis, 2)));
+                obj.insert(
+                    "itbis_amount".to_string(),
+                    serde_json::json!(format_number(itbis, 2)),
+                );
             }
 
             // Format dates
             if let Some(date) = obj.get("issue_date").and_then(|v| v.as_str()) {
                 if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(date) {
-                    obj.insert("issue_date".to_string(),
-                        serde_json::json!(parsed.format("%d/%m/%Y").to_string()));
+                    obj.insert(
+                        "issue_date".to_string(),
+                        serde_json::json!(parsed.format("%d/%m/%Y").to_string()),
+                    );
                 }
             }
 
@@ -232,18 +240,24 @@ impl DocumentGenerator for InvoiceGenerator {
                     if let Some(item_obj) = item.as_object_mut() {
                         // Format item amounts
                         if let Some(price) = item_obj.get("unit_price").and_then(|v| v.as_f64()) {
-                            item_obj.insert("unit_price".to_string(),
-                                serde_json::json!(format_number(price, 2)));
+                            item_obj.insert(
+                                "unit_price".to_string(),
+                                serde_json::json!(format_number(price, 2)),
+                            );
                         }
 
                         if let Some(total) = item_obj.get("total").and_then(|v| v.as_f64()) {
-                            item_obj.insert("total".to_string(),
-                                serde_json::json!(format_number(total, 2)));
+                            item_obj.insert(
+                                "total".to_string(),
+                                serde_json::json!(format_number(total, 2)),
+                            );
                         }
 
                         if let Some(itbis) = item_obj.get("itbis_amount").and_then(|v| v.as_f64()) {
-                            item_obj.insert("itbis_amount".to_string(),
-                                serde_json::json!(format_number(itbis, 2)));
+                            item_obj.insert(
+                                "itbis_amount".to_string(),
+                                serde_json::json!(format_number(itbis, 2)),
+                            );
                         }
                     }
                 }
@@ -258,7 +272,9 @@ impl DocumentGenerator for InvoiceGenerator {
         };
 
         // Generate PDF
-        self.typst_generator.process(final_template, &invoice_data).await
+        self.typst_generator
+            .process(final_template, &invoice_data)
+            .await
     }
 
     fn supported_types(&self) -> Vec<DocumentType> {
@@ -338,7 +354,10 @@ mod tests {
                 assert!(!pdf.is_empty());
             }
             Err(e) => {
-                println!("Could not generate invoice (Typst may not be installed): {}", e);
+                println!(
+                    "Could not generate invoice (Typst may not be installed): {}",
+                    e
+                );
             }
         }
     }

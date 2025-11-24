@@ -2,20 +2,20 @@
 //!
 //! SQLite with SQLx for persistence
 
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
-use std::time::Duration;
 use anyhow::Result;
+use sqlx::{sqlite::SqlitePoolOptions, SqlitePool};
+use std::time::Duration;
 
 // Temporarily disable repositories until database is set up
 // pub mod document_repository;
 pub mod invoice_repository;
-pub mod notification_repository;
 pub mod ncf_sequence_repository;
+pub mod notification_repository;
 
 // pub use document_repository::SqliteDocumentRepository;
 pub use invoice_repository::SqliteInvoiceRepository;
-pub use notification_repository::SqliteNotificationRepository;
 pub use ncf_sequence_repository::SqliteNCFSequenceRepository;
+pub use notification_repository::SqliteNotificationRepository;
 
 /// Database connection pool
 #[derive(Clone)]
@@ -35,9 +35,7 @@ impl Database {
             .await?;
 
         // Run migrations
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await?;
+        sqlx::migrate!("./migrations").run(&pool).await?;
 
         Ok(Self { pool })
     }
@@ -49,9 +47,7 @@ impl Database {
 
     /// Health check
     pub async fn health_check(&self) -> Result<()> {
-        sqlx::query("SELECT 1")
-            .fetch_one(&self.pool)
-            .await?;
+        sqlx::query("SELECT 1").fetch_one(&self.pool).await?;
         Ok(())
     }
 }
@@ -60,23 +56,71 @@ impl Database {
 #[async_trait::async_trait]
 pub trait DocumentRepository: Send + Sync {
     async fn create(&self, document: &crate::domain::document::Document) -> Result<()>;
-    async fn find_by_id(&self, tenant_id: &str, document_id: &str) -> Result<Option<crate::domain::document::Document>>;
-    async fn find_by_number(&self, tenant_id: &str, document_type: &str, document_number: &str) -> Result<Option<crate::domain::document::Document>>;
-    async fn update_status(&self, tenant_id: &str, document_id: &str, status: crate::domain::document::DocumentStatus) -> Result<()>;
-    async fn update_storage(&self, tenant_id: &str, document_id: &str, storage_path: &str, storage_url: &str, file_size: u64) -> Result<()>;
-    async fn list(&self, tenant_id: &str, limit: i64, offset: i64) -> Result<Vec<crate::domain::document::Document>>;
+    async fn find_by_id(
+        &self,
+        tenant_id: &str,
+        document_id: &str,
+    ) -> Result<Option<crate::domain::document::Document>>;
+    async fn find_by_number(
+        &self,
+        tenant_id: &str,
+        document_type: &str,
+        document_number: &str,
+    ) -> Result<Option<crate::domain::document::Document>>;
+    async fn update_status(
+        &self,
+        tenant_id: &str,
+        document_id: &str,
+        status: crate::domain::document::DocumentStatus,
+    ) -> Result<()>;
+    async fn update_storage(
+        &self,
+        tenant_id: &str,
+        document_id: &str,
+        storage_path: &str,
+        storage_url: &str,
+        file_size: u64,
+    ) -> Result<()>;
+    async fn list(
+        &self,
+        tenant_id: &str,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<crate::domain::document::Document>>;
 }
 
 /// Repository trait for invoices
 #[async_trait::async_trait]
 pub trait InvoiceRepository: Send + Sync {
     async fn create(&self, invoice: &crate::domain::invoice::InvoiceData) -> Result<String>;
-    async fn find_by_id(&self, tenant_id: &str, invoice_id: &str) -> Result<Option<crate::domain::invoice::InvoiceData>>;
+    async fn find_by_id(
+        &self,
+        tenant_id: &str,
+        invoice_id: &str,
+    ) -> Result<Option<crate::domain::invoice::InvoiceData>>;
     async fn find_by_ncf(&self, ncf: &str) -> Result<Option<crate::domain::invoice::InvoiceData>>;
-    async fn find_by_number(&self, tenant_id: &str, invoice_number: &str) -> Result<Option<crate::domain::invoice::InvoiceData>>;
-    async fn update_status(&self, tenant_id: &str, invoice_id: &str, status: crate::domain::invoice::InvoiceStatus) -> Result<()>;
-    async fn mark_paid(&self, tenant_id: &str, invoice_id: &str, payment_method: &str, paid_date: chrono::DateTime<chrono::Utc>) -> Result<()>;
-    async fn list_overdue(&self, tenant_id: &str) -> Result<Vec<crate::domain::invoice::InvoiceData>>;
+    async fn find_by_number(
+        &self,
+        tenant_id: &str,
+        invoice_number: &str,
+    ) -> Result<Option<crate::domain::invoice::InvoiceData>>;
+    async fn update_status(
+        &self,
+        tenant_id: &str,
+        invoice_id: &str,
+        status: crate::domain::invoice::InvoiceStatus,
+    ) -> Result<()>;
+    async fn mark_paid(
+        &self,
+        tenant_id: &str,
+        invoice_id: &str,
+        payment_method: &str,
+        paid_date: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()>;
+    async fn list_overdue(
+        &self,
+        tenant_id: &str,
+    ) -> Result<Vec<crate::domain::invoice::InvoiceData>>;
     async fn get_next_invoice_number(&self, tenant_id: &str) -> Result<String>;
 }
 
@@ -84,17 +128,47 @@ pub trait InvoiceRepository: Send + Sync {
 #[async_trait::async_trait]
 pub trait NotificationRepository: Send + Sync {
     async fn create(&self, notification: &crate::domain::notification::Notification) -> Result<()>;
-    async fn find_by_id(&self, tenant_id: &str, notification_id: &str) -> Result<Option<crate::domain::notification::Notification>>;
-    async fn update_status(&self, tenant_id: &str, notification_id: &str, status: crate::domain::notification::NotificationStatus) -> Result<()>;
-    async fn list_pending(&self, tenant_id: &str, channel: Option<&str>) -> Result<Vec<crate::domain::notification::Notification>>;
+    async fn find_by_id(
+        &self,
+        tenant_id: &str,
+        notification_id: &str,
+    ) -> Result<Option<crate::domain::notification::Notification>>;
+    async fn update_status(
+        &self,
+        tenant_id: &str,
+        notification_id: &str,
+        status: crate::domain::notification::NotificationStatus,
+    ) -> Result<()>;
+    async fn list_pending(
+        &self,
+        tenant_id: &str,
+        channel: Option<&str>,
+    ) -> Result<Vec<crate::domain::notification::Notification>>;
 }
 
 /// Repository trait for NCF sequences
 #[async_trait::async_trait]
 pub trait NCFSequenceRepository: Send + Sync {
-    async fn create_sequence(&self, tenant_id: &str, serie: char, tipo_code: u32, max_sequence: u64, expiry_date: chrono::DateTime<chrono::Utc>) -> Result<()>;
-    async fn get_next_ncf(&self, tenant_id: &str, serie: char, tipo_code: u32) -> Result<crate::domain::fiscal::NCF>;
-    async fn get_active_sequence(&self, tenant_id: &str, serie: char, tipo_code: u32) -> Result<Option<NCFSequenceInfo>>;
+    async fn create_sequence(
+        &self,
+        tenant_id: &str,
+        serie: char,
+        tipo_code: u32,
+        max_sequence: u64,
+        expiry_date: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()>;
+    async fn get_next_ncf(
+        &self,
+        tenant_id: &str,
+        serie: char,
+        tipo_code: u32,
+    ) -> Result<crate::domain::fiscal::NCF>;
+    async fn get_active_sequence(
+        &self,
+        tenant_id: &str,
+        serie: char,
+        tipo_code: u32,
+    ) -> Result<Option<NCFSequenceInfo>>;
 }
 
 /// NCF Sequence information

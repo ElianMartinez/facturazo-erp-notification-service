@@ -1,11 +1,11 @@
 use crate::templates::template_models::*;
 use crate::templates::template_trait::{TemplateRegistry, TypstTemplate};
 use anyhow::Result;
+use serde_json;
+use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
 use std::sync::Arc;
-use serde_json;
-use std::collections::HashMap;
 
 pub struct TemplateEngine {
     output_dir: String,
@@ -29,7 +29,9 @@ impl TemplateEngine {
         fs::create_dir_all(&self.output_dir)?;
 
         // Obtener la plantilla del registro
-        let template = self.registry.get(template_id)
+        let template = self
+            .registry
+            .get(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template no encontrado: {}", template_id))?;
 
         // Convertir TemplateData a JSON para la plantilla
@@ -45,7 +47,8 @@ impl TemplateEngine {
         let _assets: HashMap<String, String> = HashMap::new();
 
         let timestamp = chrono::Utc::now().timestamp();
-        let base_filename = output_filename.unwrap_or_else(|| format!("{}_{}", template_id, timestamp));
+        let base_filename =
+            output_filename.unwrap_or_else(|| format!("{}_{}", template_id, timestamp));
 
         let typ_path = format!("{}/{}.typ", self.output_dir, base_filename);
         let pdf_path = format!("{}/{}.pdf", self.output_dir, base_filename);
@@ -84,7 +87,9 @@ impl TemplateEngine {
         fs::create_dir_all(&self.output_dir)?;
 
         // Obtener la plantilla del registro
-        let template = self.registry.get(template_id)
+        let template = self
+            .registry
+            .get(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template no encontrado: {}", template_id))?;
 
         // Validar los datos
@@ -94,7 +99,8 @@ impl TemplateEngine {
         let typst_content = template.generate(&json_data)?;
 
         let timestamp = chrono::Utc::now().timestamp();
-        let base_filename = output_filename.unwrap_or_else(|| format!("{}_{}", template_id, timestamp));
+        let base_filename =
+            output_filename.unwrap_or_else(|| format!("{}_{}", template_id, timestamp));
 
         let typ_path = format!("{}/{}.typ", self.output_dir, base_filename);
         let pdf_path = format!("{}/{}.pdf", self.output_dir, base_filename);

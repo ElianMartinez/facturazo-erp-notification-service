@@ -2,11 +2,11 @@
 //!
 //! Efficient CSV generation for large datasets
 
+use super::{DocumentGenerator, DocumentType};
 use anyhow::Result;
 use csv::Writer;
 use serde_json::Value;
 use std::io::Cursor;
-use super::{DocumentGenerator, DocumentType};
 
 /// CSV document generator
 pub struct CsvGenerator;
@@ -112,17 +112,30 @@ impl CsvGenerator {
             if let Some(seller) = invoice_data.get("seller") {
                 writer.write_record(&[
                     "Vendedor:",
-                    seller.get("company_name").and_then(|n| n.as_str()).unwrap_or(""),
-                    "", "", ""
+                    seller
+                        .get("company_name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or(""),
+                    "",
+                    "",
+                    "",
                 ])?;
 
-                if let Some(rnc) = seller.get("rnc").and_then(|r| r.get("value")).and_then(|v| v.as_str()) {
+                if let Some(rnc) = seller
+                    .get("rnc")
+                    .and_then(|r| r.get("value"))
+                    .and_then(|v| v.as_str())
+                {
                     writer.write_record(&["RNC:", rnc, "", "", ""])?;
                 }
             }
 
             // NCF
-            if let Some(ncf) = invoice_data.get("ncf").and_then(|n| n.get("formatted")).and_then(|f| f.as_str()) {
+            if let Some(ncf) = invoice_data
+                .get("ncf")
+                .and_then(|n| n.get("formatted"))
+                .and_then(|f| f.as_str())
+            {
                 writer.write_record(&["NCF:", ncf, "", "", ""])?;
             }
 
@@ -133,7 +146,9 @@ impl CsvGenerator {
                 writer.write_record(&[
                     "Cliente:",
                     customer.get("name").and_then(|n| n.as_str()).unwrap_or(""),
-                    "", "", ""
+                    "",
+                    "",
+                    "",
                 ])?;
             }
 
@@ -159,16 +174,25 @@ impl CsvGenerator {
 
             // Totals
             writer.write_record(&[
-                "", "", "Subtotal:", "",
-                &self.format_cell(invoice_data.get("subtotal").unwrap_or(&Value::Null))
+                "",
+                "",
+                "Subtotal:",
+                "",
+                &self.format_cell(invoice_data.get("subtotal").unwrap_or(&Value::Null)),
             ])?;
             writer.write_record(&[
-                "", "", "ITBIS:", "",
-                &self.format_cell(invoice_data.get("itbis_amount").unwrap_or(&Value::Null))
+                "",
+                "",
+                "ITBIS:",
+                "",
+                &self.format_cell(invoice_data.get("itbis_amount").unwrap_or(&Value::Null)),
             ])?;
             writer.write_record(&[
-                "", "", "TOTAL:", "",
-                &self.format_cell(invoice_data.get("total_amount").unwrap_or(&Value::Null))
+                "",
+                "",
+                "TOTAL:",
+                "",
+                &self.format_cell(invoice_data.get("total_amount").unwrap_or(&Value::Null)),
             ])?;
 
             writer.flush()?;
@@ -190,7 +214,10 @@ impl CsvGenerator {
             }
 
             // Executive summary
-            if let Some(summary) = report_data.get("executive_summary").and_then(|s| s.as_str()) {
+            if let Some(summary) = report_data
+                .get("executive_summary")
+                .and_then(|s| s.as_str())
+            {
                 writer.write_record(&["Resumen Ejecutivo:"])?;
                 writer.write_record(&[summary])?;
                 writer.write_record(&[""])?;
@@ -211,10 +238,8 @@ impl CsvGenerator {
             if let Some(table) = report_data.get("table") {
                 // Headers
                 if let Some(headers) = table.get("headers").and_then(|h| h.as_array()) {
-                    let header_row: Vec<String> = headers
-                        .iter()
-                        .map(|h| self.format_cell(h))
-                        .collect();
+                    let header_row: Vec<String> =
+                        headers.iter().map(|h| self.format_cell(h)).collect();
                     writer.write_record(&header_row)?;
                 }
 
@@ -228,10 +253,8 @@ impl CsvGenerator {
 
                 // Totals
                 if let Some(totals) = table.get("totals").and_then(|t| t.as_array()) {
-                    let total_row: Vec<String> = totals
-                        .iter()
-                        .map(|t| self.format_cell(t))
-                        .collect();
+                    let total_row: Vec<String> =
+                        totals.iter().map(|t| self.format_cell(t)).collect();
                     writer.write_record(&total_row)?;
                 }
             }
@@ -251,16 +274,15 @@ impl CsvGenerator {
             // Check if we have streaming data
             if let Some(stream_config) = data.get("stream_config") {
                 // Handle streaming configuration for large datasets
-                let batch_size = stream_config.get("batch_size")
+                let batch_size = stream_config
+                    .get("batch_size")
                     .and_then(|b| b.as_u64())
                     .unwrap_or(1000) as usize;
 
                 // Process in batches for memory efficiency
                 if let Some(headers) = data.get("headers").and_then(|h| h.as_array()) {
-                    let header_row: Vec<String> = headers
-                        .iter()
-                        .map(|h| self.format_cell(h))
-                        .collect();
+                    let header_row: Vec<String> =
+                        headers.iter().map(|h| self.format_cell(h)).collect();
                     writer.write_record(&header_row)?;
                 }
 

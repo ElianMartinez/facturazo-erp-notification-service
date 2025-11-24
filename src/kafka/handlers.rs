@@ -5,10 +5,12 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{info, warn, error, instrument};
+use tracing::{error, info, instrument, warn};
 
-use crate::application::commands::{GenerateDocumentCommand, SendNotificationCommand, Priority};
-use crate::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator, DocumentResult, NotificationResult};
+use crate::application::commands::{GenerateDocumentCommand, Priority, SendNotificationCommand};
+use crate::application::orchestrators::{
+    DocumentOrchestrator, DocumentResult, NotificationOrchestrator, NotificationResult,
+};
 use crate::domain::document::{DocumentFormat, DocumentType};
 use crate::domain::notification::NotificationChannel;
 
@@ -141,28 +143,21 @@ impl KafkaHandler {
     #[instrument(skip(self, message), fields(message_type = ?std::mem::discriminant(&message)))]
     pub async fn handle(&self, message: KafkaMessage) -> Result<HandlerResponse> {
         match message {
-            KafkaMessage::GenerateDocument(req) => {
-                self.handle_generate_document(req).await
-            }
-            KafkaMessage::SendNotification(req) => {
-                self.handle_send_notification(req).await
-            }
-            KafkaMessage::GenerateAndNotify(req) => {
-                self.handle_generate_and_notify(req).await
-            }
-            KafkaMessage::BatchGenerate(req) => {
-                self.handle_batch_generate(req).await
-            }
-            KafkaMessage::BatchNotify(req) => {
-                self.handle_batch_notify(req).await
-            }
+            KafkaMessage::GenerateDocument(req) => self.handle_generate_document(req).await,
+            KafkaMessage::SendNotification(req) => self.handle_send_notification(req).await,
+            KafkaMessage::GenerateAndNotify(req) => self.handle_generate_and_notify(req).await,
+            KafkaMessage::BatchGenerate(req) => self.handle_batch_generate(req).await,
+            KafkaMessage::BatchNotify(req) => self.handle_batch_notify(req).await,
             KafkaMessage::GenerateAndNotifyMany(req) => {
                 self.handle_generate_and_notify_many(req).await
             }
         }
     }
 
-    async fn handle_generate_document(&self, req: GenerateDocumentRequest) -> Result<HandlerResponse> {
+    async fn handle_generate_document(
+        &self,
+        req: GenerateDocumentRequest,
+    ) -> Result<HandlerResponse> {
         info!("Handling GenerateDocument: {}", req.request_id);
 
         let command = GenerateDocumentCommand {
@@ -189,7 +184,10 @@ impl KafkaHandler {
         })
     }
 
-    async fn handle_send_notification(&self, req: SendNotificationRequest) -> Result<HandlerResponse> {
+    async fn handle_send_notification(
+        &self,
+        req: SendNotificationRequest,
+    ) -> Result<HandlerResponse> {
         info!("Handling SendNotification: {}", req.request_id);
 
         let command = SendNotificationCommand {
@@ -215,7 +213,10 @@ impl KafkaHandler {
         })
     }
 
-    async fn handle_generate_and_notify(&self, req: GenerateAndNotifyRequest) -> Result<HandlerResponse> {
+    async fn handle_generate_and_notify(
+        &self,
+        req: GenerateAndNotifyRequest,
+    ) -> Result<HandlerResponse> {
         info!("Handling GenerateAndNotify: {}", req.request_id);
 
         // 1. Generate document
@@ -237,21 +238,29 @@ impl KafkaHandler {
             request_id: req.request_id,
             document_id,
             notification_id: match notif_result {
-                HandlerResponse::NotificationSent { notification_id, .. } => notification_id,
+                HandlerResponse::NotificationSent {
+                    notification_id, ..
+                } => notification_id,
                 _ => "unknown".to_string(),
             },
         })
     }
 
     async fn handle_batch_generate(&self, req: BatchGenerateRequest) -> Result<HandlerResponse> {
-        info!("Handling BatchGenerate: {} with {} documents", req.batch_id, req.documents.len());
+        info!(
+            "Handling BatchGenerate: {} with {} documents",
+            req.batch_id,
+            req.documents.len()
+        );
 
         let mut results = Vec::new();
         let mut failed = 0;
 
         if req.parallel {
             // Process in parallel
-            let futures: Vec<_> = req.documents.iter()
+            let futures: Vec<_> = req
+                .documents
+                .iter()
                 .map(|doc| self.handle_generate_document(doc.clone()))
                 .collect();
 
@@ -290,7 +299,11 @@ impl KafkaHandler {
 
     /// Handle batch notifications to multiple recipients
     async fn handle_batch_notify(&self, req: BatchNotifyRequest) -> Result<HandlerResponse> {
-        info!("Handling BatchNotify: {} to {} recipients", req.batch_id, req.recipients.len());
+        info!(
+            "Handling BatchNotify: {} to {} recipients",
+            req.batch_id,
+            req.recipients.len()
+        );
 
         let concurrency = req.concurrency.unwrap_or(10);
         let mut successful = 0;
@@ -300,25 +313,31 @@ impl KafkaHandler {
         if req.parallel {
             // Process in parallel with concurrency limit using chunks
             for chunk in req.recipients.chunks(concurrency) {
-                let futures: Vec<_> = chunk.iter().enumerate().map(|(i, recipient)| {
-                    let notif_req = SendNotificationRequest {
-                        request_id: format!("{}-{}", req.request_id, i),
-                        tenant_id: req.tenant_id.clone(),
-                        channel: req.channel.clone(),
-                        recipient: recipient.clone(),
-                        subject: req.subject.clone(),
-                        message: req.message.clone(),
-                        document_id: req.document_id.clone(),
-                        callback_url: None,
-                    };
-                    self.handle_send_notification(notif_req)
-                }).collect();
+                let futures: Vec<_> = chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(i, recipient)| {
+                        let notif_req = SendNotificationRequest {
+                            request_id: format!("{}-{}", req.request_id, i),
+                            tenant_id: req.tenant_id.clone(),
+                            channel: req.channel.clone(),
+                            recipient: recipient.clone(),
+                            subject: req.subject.clone(),
+                            message: req.message.clone(),
+                            document_id: req.document_id.clone(),
+                            callback_url: None,
+                        };
+                        self.handle_send_notification(notif_req)
+                    })
+                    .collect();
 
                 let chunk_results = futures::future::join_all(futures).await;
 
                 for result in chunk_results {
                     match result {
-                        Ok(HandlerResponse::NotificationSent { notification_id, .. }) => {
+                        Ok(HandlerResponse::NotificationSent {
+                            notification_id, ..
+                        }) => {
                             successful += 1;
                             notification_ids.push(notification_id);
                         }
@@ -345,7 +364,9 @@ impl KafkaHandler {
                 };
 
                 match self.handle_send_notification(notif_req).await {
-                    Ok(HandlerResponse::NotificationSent { notification_id, .. }) => {
+                    Ok(HandlerResponse::NotificationSent {
+                        notification_id, ..
+                    }) => {
                         successful += 1;
                         notification_ids.push(notification_id);
                     }
@@ -369,9 +390,15 @@ impl KafkaHandler {
     }
 
     /// Handle generate document and notify multiple recipients
-    async fn handle_generate_and_notify_many(&self, req: GenerateAndNotifyManyRequest) -> Result<HandlerResponse> {
-        info!("Handling GenerateAndNotifyMany: {} to {} recipients",
-              req.request_id, req.notification.recipients.len());
+    async fn handle_generate_and_notify_many(
+        &self,
+        req: GenerateAndNotifyManyRequest,
+    ) -> Result<HandlerResponse> {
+        info!(
+            "Handling GenerateAndNotifyMany: {} to {} recipients",
+            req.request_id,
+            req.notification.recipients.len()
+        );
 
         // 1. Generate document first
         let doc_result = self.handle_generate_document(req.document.clone()).await?;
@@ -399,7 +426,9 @@ impl KafkaHandler {
         let notify_result = self.handle_batch_notify(batch_notify_req).await?;
 
         let (notifications_sent, notifications_failed) = match &notify_result {
-            HandlerResponse::BatchNotifyCompleted { successful, failed, .. } => (*successful, *failed),
+            HandlerResponse::BatchNotifyCompleted {
+                successful, failed, ..
+            } => (*successful, *failed),
             _ => (0, 0),
         };
 
@@ -520,10 +549,22 @@ mod tests {
 
     #[test]
     fn test_parse_document_type() {
-        assert!(matches!(parse_document_type("invoice"), DocumentType::Invoice));
-        assert!(matches!(parse_document_type("INVOICE"), DocumentType::Invoice));
-        assert!(matches!(parse_document_type("quotation"), DocumentType::Quotation));
-        assert!(matches!(parse_document_type("custom_type"), DocumentType::Custom(_)));
+        assert!(matches!(
+            parse_document_type("invoice"),
+            DocumentType::Invoice
+        ));
+        assert!(matches!(
+            parse_document_type("INVOICE"),
+            DocumentType::Invoice
+        ));
+        assert!(matches!(
+            parse_document_type("quotation"),
+            DocumentType::Quotation
+        ));
+        assert!(matches!(
+            parse_document_type("custom_type"),
+            DocumentType::Custom(_)
+        ));
     }
 
     #[test]

@@ -3,9 +3,9 @@
 //! This module only contains data structures for receiving invoice information
 //! from the core service. NO business logic, validations or calculations.
 
+use crate::domain::fiscal::{TaxId, NCF, RNC};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use crate::domain::fiscal::{NCF, RNC, TaxId};
 
 /// Invoice data (comes fully calculated from core service)
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,7 +35,7 @@ pub struct InvoiceData {
     pub total_amount: f64,
 
     // Currency and formatting
-    pub currency: String,           // "DOP", "USD", etc
+    pub currency: String,                // "DOP", "USD", etc
     pub currency_symbol: Option<String>, // "RD$", "US$", etc
 
     // Dates
@@ -141,7 +141,7 @@ impl InvoiceStatus {
 /// Currency display info
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Currency {
-    pub code: String,     // "DOP", "USD", "EUR"
-    pub symbol: String,   // "RD$", "$", "€"
-    pub name: String,     // "Peso Dominicano", etc
+    pub code: String,   // "DOP", "USD", "EUR"
+    pub symbol: String, // "RD$", "$", "€"
+    pub name: String,   // "Peso Dominicano", etc
 }

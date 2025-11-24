@@ -5,7 +5,7 @@ pub mod templates;
 
 pub use template_engine::*;
 pub use template_models::*;
-pub use template_trait::{TypstTemplate, TemplateRegistry};
+pub use template_trait::{TemplateRegistry, TypstTemplate};
 
 // Re-export TemplateEngine as TemplateManager for backward compatibility
 pub type TemplateManager = template_engine::TemplateEngine;

@@ -1,12 +1,12 @@
 //! Typst PDF generator implementation
 
 use anyhow::Result;
-use tokio::process::Command;
-use tokio::fs;
-use std::path::{Path, PathBuf};
-use uuid::Uuid;
 use handlebars::Handlebars;
 use serde_json::Value;
+use std::path::{Path, PathBuf};
+use tokio::fs;
+use tokio::process::Command;
+use uuid::Uuid;
 
 /// Typst-based PDF generator
 pub struct TypstGenerator {
@@ -81,10 +81,7 @@ impl TypstGenerator {
 
     /// Check if Typst is installed
     pub async fn check_typst_installation() -> Result<bool> {
-        let output = Command::new("typst")
-            .arg("--version")
-            .output()
-            .await;
+        let output = Command::new("typst").arg("--version").output().await;
 
         Ok(output.is_ok() && output.unwrap().status.success())
     }
@@ -135,11 +132,12 @@ pub mod helpers {
     /// Format NCF with proper grouping
     pub fn format_ncf(ncf: &str) -> String {
         if ncf.len() == 11 {
-            format!("{}{}-{}-{}",
-                &ncf[0..1],   // Serie (E)
-                &ncf[1..3],   // Tipo (31)
-                &ncf[3..7],   // First group (0000)
-                &ncf[7..11]   // Second group (0001)
+            format!(
+                "{}{}-{}-{}",
+                &ncf[0..1],  // Serie (E)
+                &ncf[1..3],  // Tipo (31)
+                &ncf[3..7],  // First group (0000)
+                &ncf[7..11]  // Second group (0001)
             )
         } else {
             ncf.to_string()
@@ -149,18 +147,15 @@ pub mod helpers {
     /// Format RNC with dashes
     pub fn format_rnc(rnc: &str) -> String {
         if rnc.len() == 9 {
-            format!("{}-{}-{}-{}",
+            format!(
+                "{}-{}-{}-{}",
                 &rnc[0..1],
                 &rnc[1..3],
                 &rnc[3..8],
                 &rnc[8..9]
             )
         } else if rnc.len() == 11 {
-            format!("{}-{}-{}",
-                &rnc[0..3],
-                &rnc[3..10],
-                &rnc[10..11]
-            )
+            format!("{}-{}-{}", &rnc[0..3], &rnc[3..10], &rnc[10..11])
         } else {
             rnc.to_string()
         }
@@ -168,13 +163,12 @@ pub mod helpers {
 
     /// Format phone number
     pub fn format_phone(phone: &str) -> String {
-        let clean = phone.chars().filter(|c| c.is_ascii_digit()).collect::<String>();
+        let clean = phone
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect::<String>();
         if clean.len() == 10 {
-            format!("({}) {}-{}",
-                &clean[0..3],
-                &clean[3..6],
-                &clean[6..10]
-            )
+            format!("({}) {}-{}", &clean[0..3], &clean[3..6], &clean[6..10])
         } else {
             phone.to_string()
         }
@@ -188,7 +182,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_typst_installation_check() {
-        let installed = TypstGenerator::check_typst_installation().await.unwrap_or(false);
+        let installed = TypstGenerator::check_typst_installation()
+            .await
+            .unwrap_or(false);
         println!("Typst installed: {}", installed);
     }
 
