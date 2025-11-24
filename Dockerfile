@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
+# Configure cargo for better network reliability
+ENV CARGO_NET_RETRY=10
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
+
 # Copy manifests first for better caching
 COPY Cargo.toml Cargo.lock ./
 
@@ -21,6 +25,9 @@ COPY Cargo.toml Cargo.lock ./
 RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     echo "pub fn dummy() {}" > src/lib.rs
+
+# Fetch all dependencies first
+RUN cargo fetch
 
 # Build dependencies only (cached layer)
 RUN cargo build --release && rm -rf src target/release/deps/pdf_services*
