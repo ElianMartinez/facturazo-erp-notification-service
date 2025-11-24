@@ -2,23 +2,56 @@
 //!
 //! Contains implementations of external services and repositories
 
+pub mod database;
+pub mod cache;
+pub mod storage;
 pub mod generators;
 pub mod notifications;
 pub mod persistence;
 pub mod observability;
+pub mod kafka;
 
 use anyhow::Result;
+use std::sync::Arc;
 
 /// Infrastructure container
 pub struct Infrastructure {
-    // All infrastructure services will be initialized here
+    pub database: Arc<database::Database>,
+    pub cache: Arc<cache::CacheManager>,
+    // pub document_repository: Arc<database::SqliteDocumentRepository>,
 }
 
 impl Infrastructure {
     /// Create new infrastructure container
     pub async fn new(config: &crate::config::AppConfig) -> Result<Self> {
-        // Initialize all infrastructure services
-        Ok(Self {})
+        // Initialize database
+        let database = Arc::new(
+            database::Database::new(&config.database.path).await?
+        );
+
+        // Initialize cache
+        let cache = Arc::new(cache::CacheManager::new());
+
+        // Initialize repositories
+        // let document_repository = Arc::new(
+        //     database::SqliteDocumentRepository::new(database.pool().clone())
+        // );
+
+        Ok(Self {
+            database,
+            cache,
+            // document_repository,
+        })
+    }
+
+    /// Health check for all infrastructure services
+    pub async fn health_check(&self) -> Result<()> {
+        // Check database
+        self.database.health_check().await?;
+
+        // Cache is always available (in-memory)
+
+        Ok(())
     }
 
     /// Shutdown infrastructure services
