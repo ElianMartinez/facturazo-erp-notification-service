@@ -47,8 +47,11 @@ RUN apt-get update && apt-get install -y \
 
 # Install Typst from GitHub releases
 ARG TYPST_VERSION=0.12.0
-RUN curl -fsSL https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz \
-    | tar -xJ --strip-components=1 -C /usr/local/bin typst-x86_64-unknown-linux-musl/typst
+RUN cd /tmp && \
+    curl -fsSLO https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz && \
+    tar -xf typst-x86_64-unknown-linux-musl.tar.xz && \
+    mv typst-x86_64-unknown-linux-musl/typst /usr/local/bin/ && \
+    rm -rf typst-x86_64-unknown-linux-musl*
 
 WORKDIR /app
 
