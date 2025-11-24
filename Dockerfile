@@ -10,13 +10,13 @@ RUN apt-get update && apt-get install -y \
     librdkafka-dev \
     libsasl2-dev \
     cmake \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Configure cargo for better network reliability
 ENV CARGO_NET_RETRY=10
-ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 
 # Copy manifests first for better caching
 COPY Cargo.toml Cargo.lock ./
@@ -26,8 +26,8 @@ RUN mkdir src && \
     echo "fn main() {}" > src/main.rs && \
     echo "pub fn dummy() {}" > src/lib.rs
 
-# Fetch all dependencies first
-RUN cargo fetch
+# Update cargo registry and fetch dependencies
+RUN cargo update --dry-run && cargo fetch --locked
 
 # Build dependencies only (cached layer)
 RUN cargo build --release && rm -rf src target/release/deps/pdf_services*
