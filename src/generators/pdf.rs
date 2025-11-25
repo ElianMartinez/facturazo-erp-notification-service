@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use anyhow::Result;
-use std::process::Command;
-use uuid::Uuid;
 use std::fs;
+use std::process::Command;
+use std::sync::Arc;
+use uuid::Uuid;
 
 use crate::templates::TemplateManager;
 
@@ -14,8 +14,7 @@ pub struct PdfGenerator {
 
 impl PdfGenerator {
     pub fn new(template_manager: Arc<TemplateManager>) -> Self {
-        let temp_dir = std::env::var("TEMP_DIR")
-            .unwrap_or_else(|_| "/tmp".to_string());
+        let temp_dir = std::env::var("TEMP_DIR").unwrap_or_else(|_| "/tmp".to_string());
 
         PdfGenerator {
             template_manager,
@@ -26,7 +25,8 @@ impl PdfGenerator {
     /// Genera un PDF desde cualquier template y datos JSON
     pub async fn generate(&self, template_id: &str, data: serde_json::Value) -> Result<Vec<u8>> {
         // El template engine se encarga de toda la lógica específica
-        let pdf_path = self.template_manager
+        let pdf_path = self
+            .template_manager
             .generate_pdf_from_json(template_id, data, None)
             .await?;
 
@@ -63,7 +63,8 @@ impl PdfGenerator {
                     .args(&["compile", &typ_path, &pdf_path])
                     .output()
             }
-        }).await??;
+        })
+        .await??;
 
         if !output.status.success() {
             // Limpiar archivos temporales

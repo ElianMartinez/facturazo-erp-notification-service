@@ -2,14 +2,16 @@
 //!
 //! Tests the GeneratorFactory, Orchestrators, and related services
 
-use pdf_services::infrastructure::generators::{GeneratorFactory, GenerationOptions, DocumentType as GenDocType};
-use pdf_services::infrastructure::cache::CacheService;
-use pdf_services::infrastructure::storage::StorageService;
-use pdf_services::domain::document::{DocumentFormat, DocumentType as DomainDocType};
 use pdf_services::application::commands::GenerateDocumentCommand;
 use pdf_services::application::orchestrators::DocumentOrchestrator;
-use std::sync::Arc;
+use pdf_services::domain::document::{DocumentFormat, DocumentType as DomainDocType};
+use pdf_services::infrastructure::cache::CacheService;
+use pdf_services::infrastructure::generators::{
+    DocumentType as GenDocType, GenerationOptions, GeneratorFactory,
+};
+use pdf_services::infrastructure::storage::StorageService;
 use serde_json::json;
+use std::sync::Arc;
 use tempfile::tempdir;
 
 /// Test basic PDF generation with invoice data
@@ -57,17 +59,26 @@ async fn test_generate_invoice_pdf() {
         include_attachments: false,
     };
 
-    let result = factory.generate(
-        GenDocType::Invoice,
-        DocumentFormat::Pdf,
-        invoice_data,
-        options
-    ).await;
+    let result = factory
+        .generate(
+            GenDocType::Invoice,
+            DocumentFormat::Pdf,
+            invoice_data,
+            options,
+        )
+        .await;
 
-    assert!(result.is_ok(), "Invoice PDF generation failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Invoice PDF generation failed: {:?}",
+        result.err()
+    );
 
     let result = result.unwrap();
-    assert!(!result.document_bytes.is_empty(), "Generated PDF should not be empty");
+    assert!(
+        !result.document_bytes.is_empty(),
+        "Generated PDF should not be empty"
+    );
     assert_eq!(result.mime_type, "application/pdf");
 }
 
@@ -99,22 +110,30 @@ async fn test_generate_report_csv() {
         include_attachments: false,
     };
 
-    let result = factory.generate(
-        GenDocType::Report,
-        DocumentFormat::Csv,
-        report_data,
-        options
-    ).await;
+    let result = factory
+        .generate(
+            GenDocType::Report,
+            DocumentFormat::Csv,
+            report_data,
+            options,
+        )
+        .await;
 
     assert!(result.is_ok(), "CSV generation failed: {:?}", result.err());
 
     let result = result.unwrap();
-    assert!(!result.document_bytes.is_empty(), "Generated CSV should not be empty");
+    assert!(
+        !result.document_bytes.is_empty(),
+        "Generated CSV should not be empty"
+    );
     assert_eq!(result.mime_type, "text/csv");
 
     // Verify CSV content
     let csv_content = String::from_utf8(result.document_bytes).unwrap();
-    assert!(csv_content.contains("Producto A"), "CSV should contain test data");
+    assert!(
+        csv_content.contains("Producto A"),
+        "CSV should contain test data"
+    );
 }
 
 /// Test Excel generation for reports
@@ -136,21 +155,36 @@ async fn test_generate_report_excel() {
 
     let options = GenerationOptions::default();
 
-    let result = factory.generate(
-        GenDocType::Report,
-        DocumentFormat::Excel,
-        report_data,
-        options
-    ).await;
+    let result = factory
+        .generate(
+            GenDocType::Report,
+            DocumentFormat::Excel,
+            report_data,
+            options,
+        )
+        .await;
 
-    assert!(result.is_ok(), "Excel generation failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Excel generation failed: {:?}",
+        result.err()
+    );
 
     let result = result.unwrap();
-    assert!(!result.document_bytes.is_empty(), "Generated Excel should not be empty");
-    assert_eq!(result.mime_type, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    assert!(
+        !result.document_bytes.is_empty(),
+        "Generated Excel should not be empty"
+    );
+    assert_eq!(
+        result.mime_type,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
 
     // Verify it starts with XLSX magic bytes (PK header for ZIP)
-    assert!(result.document_bytes.starts_with(&[0x50, 0x4B]), "Excel file should be a valid ZIP/XLSX");
+    assert!(
+        result.document_bytes.starts_with(&[0x50, 0x4B]),
+        "Excel file should be a valid ZIP/XLSX"
+    );
 }
 
 /// Test cache service operations
@@ -177,13 +211,15 @@ async fn test_storage_service() {
     let temp_dir = tempdir().unwrap();
     let storage = StorageService::new(
         temp_dir.path().to_path_buf(),
-        "http://localhost".to_string()
+        "http://localhost".to_string(),
     );
 
     let test_data = b"Test PDF content";
 
     // Upload
-    let url = storage.upload("test/doc.pdf", test_data, "application/pdf").await;
+    let url = storage
+        .upload("test/doc.pdf", test_data, "application/pdf")
+        .await;
     assert!(url.is_ok(), "Upload should succeed: {:?}", url.err());
 
     // Download
@@ -203,7 +239,10 @@ async fn test_storage_service() {
     // Verify deleted
     let exists_after = storage.exists("test/doc.pdf").await;
     assert!(exists_after.is_ok());
-    assert!(!exists_after.unwrap(), "File should not exist after deletion");
+    assert!(
+        !exists_after.unwrap(),
+        "File should not exist after deletion"
+    );
 }
 
 /// Test document orchestrator workflow
@@ -216,7 +255,7 @@ async fn test_document_orchestrator() {
     let cache_service = Arc::new(CacheService::new());
     let storage_service = Arc::new(StorageService::new(
         temp_dir.path().join("storage"),
-        "".to_string()
+        "".to_string(),
     ));
 
     let orchestrator = DocumentOrchestrator::new(
@@ -250,13 +289,29 @@ async fn test_document_orchestrator() {
 
     let result = orchestrator.execute(command).await;
 
-    assert!(result.is_ok(), "Orchestrator should succeed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Orchestrator should succeed: {:?}",
+        result.err()
+    );
 
     let doc_result = result.unwrap();
-    assert!(!doc_result.document_id.is_empty(), "Should have document ID");
-    assert!(!doc_result.document_bytes.is_empty(), "Should have document bytes");
-    assert!(doc_result.storage_url.is_some(), "Should have storage URL when enabled");
-    assert!(doc_result.generation_time_ms > 0, "Should have generation time");
+    assert!(
+        !doc_result.document_id.is_empty(),
+        "Should have document ID"
+    );
+    assert!(
+        !doc_result.document_bytes.is_empty(),
+        "Should have document bytes"
+    );
+    assert!(
+        doc_result.storage_url.is_some(),
+        "Should have storage URL when enabled"
+    );
+    assert!(
+        doc_result.generation_time_ms > 0,
+        "Should have generation time"
+    );
 }
 
 /// Test QR code generation
@@ -272,7 +327,8 @@ async fn test_qr_code_generation() {
     // SVG might have XML declaration or start with <?xml or <svg
     assert!(
         svg_data.contains("<svg") || svg_data.contains("<?xml"),
-        "Should be valid SVG, got: {}", &svg_data[..100.min(svg_data.len())]
+        "Should be valid SVG, got: {}",
+        &svg_data[..100.min(svg_data.len())]
     );
     assert!(svg_data.contains("</svg>"), "Should have closing SVG tag");
 }

@@ -2,9 +2,9 @@
 //! NO business logic tests - that belongs to core service
 
 use pdf_services::domain::{
-    fiscal::{NCF, RNC, Cedula, ITBIS, TaxId, TaxIdType},
-    invoice::{InvoiceData, SellerData, CustomerData, InvoiceItemData, InvoiceStatus},
-    document::{Document, DocumentId, DocumentType, DocumentStatus},
+    document::{Document, DocumentId, DocumentStatus, DocumentType},
+    fiscal::{Cedula, TaxId, TaxIdType, ITBIS, NCF, RNC},
+    invoice::{CustomerData, InvoiceData, InvoiceItemData, InvoiceStatus, SellerData},
 };
 use serde_json;
 

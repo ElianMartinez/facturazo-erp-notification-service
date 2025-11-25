@@ -3,8 +3,8 @@
 //! This module handles all configuration loading and validation
 //! from environment variables, config files, and defaults.
 
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 /// Main application configuration
 #[derive(Debug, Clone, Deserialize, Serialize)]

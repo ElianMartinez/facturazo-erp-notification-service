@@ -2,9 +2,9 @@
 //!
 //! Automatically retries failed operations with configurable backoff
 
-use std::time::Duration;
 use std::future::Future;
-use tracing::{warn, debug};
+use std::time::Duration;
+use tracing::{debug, warn};
 
 /// Retry configuration
 #[derive(Debug, Clone)]

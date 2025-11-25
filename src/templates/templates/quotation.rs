@@ -1,7 +1,7 @@
-use anyhow::{Result, Context};
-use serde_json::Value;
+use crate::templates::template_trait::{utils, TypstTemplate};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use crate::templates::template_trait::{TypstTemplate, utils};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuotationItem {
@@ -107,7 +107,11 @@ impl QuotationTemplate {
             count += 1;
         }
 
-        format!("{}.{:02}", result.chars().rev().collect::<String>(), decimal_part)
+        format!(
+            "{}.{:02}",
+            result.chars().rev().collect::<String>(),
+            decimal_part
+        )
     }
 
     fn format_items(&self, items: &[QuotationItem]) -> String {
@@ -129,11 +133,17 @@ impl QuotationTemplate {
         let mut info = format!("  #grid(\n    columns: (auto, 1fr),\n    column-gutter: 10pt,\n    row-gutter: 5pt,\n\n    text(size: 10pt, weight: \"bold\")[Nombre:],\n    text(size: 10pt)[{}],\n", customer.name);
 
         if let Some(rnc) = &customer.rnc_cedula {
-            info.push_str(&format!("    text(size: 10pt, weight: \"bold\")[RNC/Cédula:],\n    text(size: 10pt)[{}],\n", rnc));
+            info.push_str(&format!(
+                "    text(size: 10pt, weight: \"bold\")[RNC/Cédula:],\n    text(size: 10pt)[{}],\n",
+                rnc
+            ));
         }
 
         if let Some(phone) = &customer.phone {
-            info.push_str(&format!("    text(size: 10pt, weight: \"bold\")[Teléfono:],\n    text(size: 10pt)[{}],\n", phone));
+            info.push_str(&format!(
+                "    text(size: 10pt, weight: \"bold\")[Teléfono:],\n    text(size: 10pt)[{}],\n",
+                phone
+            ));
         }
 
         info.push_str("  )");
@@ -142,7 +152,8 @@ impl QuotationTemplate {
 
     fn format_monthly_rent(&self, monthly_rent: &Option<MonthlyRent>) -> String {
         if let Some(rent) = monthly_rent {
-            format!(r#"#rect(
+            format!(
+                r#"#rect(
       width: 100%,
       fill: rgb("fff9e6"),
       stroke: 1pt + rgb("f39c12"),
@@ -191,7 +202,14 @@ impl TypstTemplate for QuotationTemplate {
             anyhow::bail!("Los datos deben ser un objeto JSON");
         }
 
-        let required_fields = ["company", "customer", "items", "discount", "date", "quotation_number"];
+        let required_fields = [
+            "company",
+            "customer",
+            "items",
+            "discount",
+            "date",
+            "quotation_number",
+        ];
         for field in required_fields.iter() {
             if data.get(field).is_none() {
                 anyhow::bail!("Campo requerido '{}' no encontrado", field);
@@ -205,7 +223,8 @@ impl TypstTemplate for QuotationTemplate {
         let quotation: QuotationData = serde_json::from_value(data.clone())
             .context("Error deserializando datos de cotización")?;
 
-        let content = format!(r#"#set page(
+        let content = format!(
+            r#"#set page(
   paper: "us-letter",
   margin: (top: 1.5cm, bottom: 1.5cm, left: 1.5cm, right: 1.5cm),
 )

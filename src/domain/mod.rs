@@ -10,8 +10,8 @@ pub mod notification;
 pub mod shared;
 
 // Re-export commonly used types
-pub use document::{Document, DocumentId, DocumentType, DocumentStatus};
-pub use fiscal::{NCF, RNC, Cedula, ITBIS, TaxId, TaxIdType};
-pub use invoice::{InvoiceData, SellerData, CustomerData, InvoiceItemData, InvoiceStatus};
+pub use document::{Document, DocumentId, DocumentStatus, DocumentType};
+pub use fiscal::{Cedula, TaxId, TaxIdType, ITBIS, NCF, RNC};
+pub use invoice::{CustomerData, InvoiceData, InvoiceItemData, InvoiceStatus, SellerData};
 pub use notification::{Notification, NotificationChannel, NotificationStatus};
-pub use shared::{TenantId, UserId, DomainError, DomainResult};
+pub use shared::{DomainError, DomainResult, TenantId, UserId};

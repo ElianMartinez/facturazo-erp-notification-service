@@ -2,11 +2,11 @@
 //!
 //! Provides fast, thread-safe caching for templates, configurations, and temporary data
 
+use anyhow::Result;
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use serde::{Serialize, Deserialize};
-use anyhow::Result;
 
 /// Cache entry with expiration
 #[derive(Clone, Debug)]
@@ -78,7 +78,8 @@ impl<T: Clone + Send + Sync + 'static> InMemoryCache<T> {
 
     /// Clear all expired entries
     pub fn clear_expired(&self) {
-        let keys_to_remove: Vec<String> = self.store
+        let keys_to_remove: Vec<String> = self
+            .store
             .iter()
             .filter(|entry| entry.value().is_expired())
             .map(|entry| entry.key().clone())
@@ -126,8 +127,8 @@ impl CacheManager {
     pub fn new() -> Self {
         Self {
             template_cache: InMemoryCache::new(Some(Duration::from_secs(3600))), // 1 hour
-            url_cache: InMemoryCache::new(Some(Duration::from_secs(900))), // 15 minutes
-            config_cache: InMemoryCache::new(Some(Duration::from_secs(300))), // 5 minutes
+            url_cache: InMemoryCache::new(Some(Duration::from_secs(900))),       // 15 minutes
+            config_cache: InMemoryCache::new(Some(Duration::from_secs(300))),    // 5 minutes
             ncf_cache: InMemoryCache::new(Some(Duration::from_secs(60))), // 1 minute for NCF sequences
         }
     }
@@ -157,13 +158,24 @@ impl CacheManager {
     }
 
     /// Get NCF sequence from cache
-    pub fn get_ncf_sequence(&self, tenant_id: &str, serie: char, tipo_code: u32) -> Option<NCFCacheEntry> {
+    pub fn get_ncf_sequence(
+        &self,
+        tenant_id: &str,
+        serie: char,
+        tipo_code: u32,
+    ) -> Option<NCFCacheEntry> {
         let key = format!("{}:{}:{}", tenant_id, serie, tipo_code);
         self.ncf_cache.get(&key)
     }
 
     /// Set NCF sequence in cache
-    pub fn set_ncf_sequence(&self, tenant_id: &str, serie: char, tipo_code: u32, entry: NCFCacheEntry) {
+    pub fn set_ncf_sequence(
+        &self,
+        tenant_id: &str,
+        serie: char,
+        tipo_code: u32,
+        entry: NCFCacheEntry,
+    ) {
         let key = format!("{}:{}:{}", tenant_id, serie, tipo_code);
         self.ncf_cache.set(key, entry, None);
     }
@@ -177,7 +189,9 @@ impl CacheManager {
     /// Clear all caches for a tenant
     pub fn clear_tenant(&self, tenant_id: &str) {
         // Clear template cache
-        let template_keys: Vec<String> = self.template_cache.store
+        let template_keys: Vec<String> = self
+            .template_cache
+            .store
             .iter()
             .filter(|entry| entry.key().starts_with(&format!("{}:", tenant_id)))
             .map(|entry| entry.key().clone())
@@ -188,7 +202,9 @@ impl CacheManager {
         }
 
         // Clear URL cache
-        let url_keys: Vec<String> = self.url_cache.store
+        let url_keys: Vec<String> = self
+            .url_cache
+            .store
             .iter()
             .filter(|entry| entry.key().starts_with(&format!("{}:", tenant_id)))
             .map(|entry| entry.key().clone())
@@ -199,7 +215,9 @@ impl CacheManager {
         }
 
         // Clear NCF cache
-        let ncf_keys: Vec<String> = self.ncf_cache.store
+        let ncf_keys: Vec<String> = self
+            .ncf_cache
+            .store
             .iter()
             .filter(|entry| entry.key().starts_with(&format!("{}:", tenant_id)))
             .map(|entry| entry.key().clone())
@@ -261,7 +279,8 @@ impl CacheService {
 
     /// Get data from cache
     pub async fn get<T: serde::de::DeserializeOwned>(&self, key: &str) -> Option<T> {
-        self.data_cache.get(key)
+        self.data_cache
+            .get(key)
             .and_then(|bytes| serde_json::from_slice(&bytes).ok())
     }
 
@@ -316,12 +335,19 @@ mod tests {
         // Test template cache
         manager.set_template("tenant1", "template1", "content1".to_string());
         assert_eq!(
-            manager.get_template("tenant1", "template1").map(|s| s.to_string()),
+            manager
+                .get_template("tenant1", "template1")
+                .map(|s| s.to_string()),
             Some("content1".to_string())
         );
 
         // Test URL cache
-        manager.set_url("tenant1", "doc1", "https://example.com".to_string(), Duration::from_secs(60));
+        manager.set_url(
+            "tenant1",
+            "doc1",
+            "https://example.com".to_string(),
+            Duration::from_secs(60),
+        );
         assert_eq!(
             manager.get_url("tenant1", "doc1"),
             Some("https://example.com".to_string())

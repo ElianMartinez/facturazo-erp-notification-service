@@ -1,10 +1,10 @@
-use actix_web::{web, HttpResponse};
-use actix_web::middleware::Logger;
 use actix_cors::Cors;
+use actix_web::middleware::Logger;
+use actix_web::{web, HttpResponse};
 
 use super::handlers;
-use super::template_handler;
 use super::middleware::{auth::create_auth_middleware, compression::create_compression_middleware};
+use super::template_handler;
 
 pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg
@@ -12,7 +12,6 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         .route("/health", web::get().to(health_check))
         .route("/ready", web::get().to(readiness_check))
         .route("/metrics", web::get().to(metrics_endpoint))
-
         // API v1
         .service(
             web::scope("/api/v1")
@@ -22,14 +21,13 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 .wrap(
                     Cors::default()
                         .allowed_origin_fn(|origin, _req_head| {
-                            origin.as_bytes().starts_with(b"http://localhost") ||
-                            origin.as_bytes().starts_with(b"https://")
+                            origin.as_bytes().starts_with(b"http://localhost")
+                                || origin.as_bytes().starts_with(b"https://")
                         })
                         .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
                         .allowed_headers(vec!["Content-Type", "Authorization", "X-User-Id"])
-                        .max_age(3600)
+                        .max_age(3600),
                 )
-
                 // Document generation
                 .service(
                     web::scope("/documents")
@@ -37,20 +35,25 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                         .route("/generate/async", web::post().to(handlers::generate_async))
                         .route("/upload", web::post().to(handlers::upload_data))
                         .route("/{id}/status", web::get().to(handlers::get_status))
-                        .route("/{id}/download", web::get().to(handlers::download_document))
+                        .route("/{id}/download", web::get().to(handlers::download_document)),
                 )
-
                 // Template management (admin only)
                 .service(
                     web::scope("/templates")
                         .route("", web::get().to(list_templates))
                         .route("/list", web::get().to(template_handler::list_templates))
-                        .route("/generate", web::post().to(template_handler::generate_pdf_from_template))
-                        .route("/preview/{id}", web::get().to(template_handler::preview_template))
+                        .route(
+                            "/generate",
+                            web::post().to(template_handler::generate_pdf_from_template),
+                        )
+                        .route(
+                            "/preview/{id}",
+                            web::get().to(template_handler::preview_template),
+                        )
                         .route("/{id}", web::get().to(get_template))
                         .route("/{id}", web::put().to(update_template))
-                        .route("/{id}/reload", web::post().to(reload_template))
-                )
+                        .route("/{id}/reload", web::post().to(reload_template)),
+                ),
         );
 }
 
@@ -93,7 +96,8 @@ async fn metrics_endpoint() -> HttpResponse {
     let metric_families = prometheus::gather();
     let mut buffer = vec![];
 
-    encoder.encode(&metric_families, &mut buffer)
+    encoder
+        .encode(&metric_families, &mut buffer)
         .expect("Failed to encode metrics");
 
     HttpResponse::Ok()
@@ -103,9 +107,7 @@ async fn metrics_endpoint() -> HttpResponse {
 
 // Template endpoints
 
-async fn list_templates(
-    state: web::Data<crate::api::ApiState>,
-) -> HttpResponse {
+async fn list_templates(state: web::Data<crate::api::ApiState>) -> HttpResponse {
     let templates = state.template_manager.list_templates();
 
     HttpResponse::Ok().json(serde_json::json!({

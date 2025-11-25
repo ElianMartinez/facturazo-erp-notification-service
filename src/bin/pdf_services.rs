@@ -1,6 +1,6 @@
-use std::process::Command;
-use std::fs::{self, create_dir_all};
 use chrono::Local;
+use std::fs::{self, create_dir_all};
+use std::process::Command;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Generador de Facturas Fiscales Electrónicas");
@@ -15,7 +15,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         invoice_number
     );
 
-    let typst_content = format!(r#"
+    let typst_content = format!(
+        r#"
 #set page(
   paper: "us-letter",
   margin: (top: 1.5cm, bottom: 1.5cm, left: 1.5cm, right: 1.5cm),
@@ -76,7 +77,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   clearance: 3em,
   text(size: 72pt, fill: rgb(255, 0, 0, 30), weight: "bold")[PAGADA]
 )
-"#, date, invoice_number);
+"#,
+        date, invoice_number
+    );
 
     let typst_filename = format!("temp_factura_{}.typ", invoice_number);
     fs::write(&typst_filename, typst_content)?;
@@ -90,7 +93,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .output()?;
 
     if !output.status.success() {
-        eprintln!("Error al compilar Typst: {}", String::from_utf8_lossy(&output.stderr));
+        eprintln!(
+            "Error al compilar Typst: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return Err("Error al generar PDF".into());
     }
 

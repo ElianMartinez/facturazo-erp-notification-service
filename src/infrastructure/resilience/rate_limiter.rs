@@ -2,11 +2,15 @@
 //!
 //! Controls request rates per tenant and endpoint using token bucket algorithm
 
+use crate::infrastructure::resilience::RateLimitError;
+use dashmap::DashMap;
+use governor::{
+    clock::DefaultClock,
+    state::{InMemoryState, NotKeyed},
+    Quota, RateLimiter as GovernorLimiter,
+};
 use std::num::NonZeroU32;
 use std::sync::Arc;
-use dashmap::DashMap;
-use governor::{Quota, RateLimiter as GovernorLimiter, clock::DefaultClock, state::{InMemoryState, NotKeyed}};
-use crate::infrastructure::resilience::RateLimitError;
 
 /// Rate limiter configuration
 #[derive(Debug, Clone)]
@@ -39,8 +43,10 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     pub fn new(requests_per_second: u32, burst_size: u32) -> Self {
-        let quota = Quota::per_second(NonZeroU32::new(requests_per_second).unwrap_or(NonZeroU32::new(1).unwrap()))
-            .allow_burst(NonZeroU32::new(burst_size).unwrap_or(NonZeroU32::new(1).unwrap()));
+        let quota = Quota::per_second(
+            NonZeroU32::new(requests_per_second).unwrap_or(NonZeroU32::new(1).unwrap()),
+        )
+        .allow_burst(NonZeroU32::new(burst_size).unwrap_or(NonZeroU32::new(1).unwrap()));
 
         Self {
             limiter: GovernorLimiter::direct(quota),
@@ -99,7 +105,11 @@ impl TenantRateLimiter {
     }
 
     /// Check rate limit for tenant and endpoint
-    pub fn check_with_endpoint(&self, tenant_id: &str, endpoint: &str) -> Result<(), RateLimitError> {
+    pub fn check_with_endpoint(
+        &self,
+        tenant_id: &str,
+        endpoint: &str,
+    ) -> Result<(), RateLimitError> {
         // Check tenant limit first
         self.check(tenant_id)?;
 

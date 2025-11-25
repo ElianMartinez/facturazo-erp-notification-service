@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use chrono::NaiveDate;
-use std::collections::HashMap;
 use super::{CompanyInfo, CustomerInfo, RenderOptions};
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InvoiceRequest {

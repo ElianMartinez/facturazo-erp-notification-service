@@ -4,8 +4,8 @@
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
-use tokio::fs;
 use std::sync::Arc;
+use tokio::fs;
 
 /// Storage trait for document persistence
 #[async_trait::async_trait]

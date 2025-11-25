@@ -4,7 +4,10 @@ use actix_web_httpauth::extractors::AuthenticationError;
 use actix_web_httpauth::middleware::HttpAuthentication;
 use std::future::{ready, Ready};
 
-pub fn create_auth_middleware() -> HttpAuthentication<BearerAuth, fn(ServiceRequest, BearerAuth) -> Ready<Result<ServiceRequest, (Error, ServiceRequest)>>> {
+pub fn create_auth_middleware() -> HttpAuthentication<
+    BearerAuth,
+    fn(ServiceRequest, BearerAuth) -> Ready<Result<ServiceRequest, (Error, ServiceRequest)>>,
+> {
     HttpAuthentication::bearer(validator)
 }
 
@@ -27,11 +30,13 @@ fn validator(
         // Extract tenant and user from token
         // Example: valid_tenant123_user456
         let parts: Vec<&str> = token.split('_').collect();
-        let tenant_id = parts.get(1)
+        let tenant_id = parts
+            .get(1)
             .and_then(|s| s.strip_prefix("tenant"))
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(1);
-        let user_id = parts.get(2)
+        let user_id = parts
+            .get(2)
             .and_then(|s| s.strip_prefix("user"))
             .and_then(|s| s.parse::<i64>().ok())
             .unwrap_or(1);
@@ -44,10 +49,8 @@ fn validator(
         });
 
         // Also add AuthInfo for handlers
-        req.extensions_mut().insert(crate::api::handlers::AuthInfo {
-            tenant_id,
-            user_id,
-        });
+        req.extensions_mut()
+            .insert(crate::api::handlers::AuthInfo { tenant_id, user_id });
 
         ready(Ok(req))
     } else {
@@ -65,6 +68,7 @@ pub struct UserInfo {
 
 // Helper function to extract tenant and user info from request
 pub fn extract_tenant_user(req: &actix_web::HttpRequest) -> Option<(i64, i64)> {
-    req.extensions().get::<UserInfo>()
+    req.extensions()
+        .get::<UserInfo>()
         .map(|info| (info.tenant_id, info.user_id))
 }

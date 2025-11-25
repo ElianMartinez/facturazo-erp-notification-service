@@ -2,9 +2,9 @@
 //!
 //! Prevents cascading failures by stopping calls to failing services
 
+use parking_lot::RwLock;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
-use parking_lot::RwLock;
 use tracing::{info, warn};
 
 /// Circuit breaker states
@@ -166,7 +166,8 @@ impl CircuitBreaker {
     }
 
     fn transition_to_half_open(&self) {
-        self.state.store(CircuitState::HalfOpen as u8, Ordering::SeqCst);
+        self.state
+            .store(CircuitState::HalfOpen as u8, Ordering::SeqCst);
         self.success_count.store(0, Ordering::SeqCst);
         info!(
             circuit_breaker = %self.name,
@@ -175,7 +176,8 @@ impl CircuitBreaker {
     }
 
     fn transition_to_closed(&self) {
-        self.state.store(CircuitState::Closed as u8, Ordering::SeqCst);
+        self.state
+            .store(CircuitState::Closed as u8, Ordering::SeqCst);
         self.failure_count.store(0, Ordering::SeqCst);
         self.success_count.store(0, Ordering::SeqCst);
         *self.opened_at.write() = None;

@@ -1,15 +1,15 @@
-use aws_sdk_s3::{Client, Config};
-use aws_sdk_s3::config::Region;
-use aws_sdk_s3::primitives::ByteStream;
-use aws_sdk_s3::presigning::PresigningConfig;
-use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
-use aws_config::meta::region::RegionProviderChain;
-use std::time::Duration;
 use anyhow::Result;
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_s3::config::Region;
+use aws_sdk_s3::presigning::PresigningConfig;
+use aws_sdk_s3::primitives::ByteStream;
+use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
+use aws_sdk_s3::{Client, Config};
 use bytes::Bytes;
 use futures::stream::Stream;
-use std::pin::Pin;
 use futures::StreamExt;
+use std::pin::Pin;
+use std::time::Duration;
 
 pub struct S3Client {
     client: Client,
@@ -18,22 +18,15 @@ pub struct S3Client {
 
 impl S3Client {
     pub async fn new() -> Result<Self> {
-        let region_provider = RegionProviderChain::default_provider()
-            .or_else("us-east-1");
+        let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
 
-        let config = aws_config::from_env()
-            .region(region_provider)
-            .load()
-            .await;
+        let config = aws_config::from_env().region(region_provider).load().await;
 
         let client = Client::new(&config);
 
         let cdn_url = std::env::var("CDN_URL").ok();
 
-        Ok(S3Client {
-            client,
-            cdn_url,
-        })
+        Ok(S3Client { client, cdn_url })
     }
 
     pub async fn new_for_r2(
@@ -92,7 +85,8 @@ impl S3Client {
     }
 
     pub async fn get_object(&self, bucket: &str, key: &str) -> Result<String> {
-        let response = self.client
+        let response = self
+            .client
             .get_object()
             .bucket(bucket)
             .key(key)
@@ -106,7 +100,8 @@ impl S3Client {
     }
 
     pub async fn get_object_bytes(&self, bucket: &str, key: &str) -> Result<Vec<u8>> {
-        let response = self.client
+        let response = self
+            .client
             .get_object()
             .bucket(bucket)
             .key(key)
@@ -127,7 +122,8 @@ impl S3Client {
             .expires_in(Duration::from_secs(expires_in_seconds))
             .build()?;
 
-        let presigned = self.client
+        let presigned = self
+            .client
             .get_object()
             .bucket(bucket)
             .key(key)
@@ -148,10 +144,7 @@ impl S3Client {
             .expires_in(Duration::from_secs(expires_in_seconds))
             .build()?;
 
-        let mut request = self.client
-            .put_object()
-            .bucket(bucket)
-            .key(key);
+        let mut request = self.client.put_object().bucket(bucket).key(key);
 
         if let Some(ct) = content_type {
             request = request.content_type(ct);
@@ -184,7 +177,8 @@ impl S3Client {
         S: Stream<Item = Result<Bytes>> + Send,
     {
         // Initiate multipart upload
-        let mut multipart = self.client
+        let mut multipart = self
+            .client
             .create_multipart_upload()
             .bucket(bucket)
             .key(key);
@@ -194,7 +188,8 @@ impl S3Client {
         }
 
         let multipart = multipart.send().await?;
-        let upload_id = multipart.upload_id()
+        let upload_id = multipart
+            .upload_id()
             .ok_or_else(|| anyhow::anyhow!("No upload ID returned"))?;
 
         let mut part_number = 1;
@@ -204,7 +199,8 @@ impl S3Client {
         while let Some(chunk_result) = data_stream.next().await {
             let chunk = chunk_result?;
 
-            let part = self.client
+            let part = self
+                .client
                 .upload_part()
                 .bucket(bucket)
                 .key(key)
@@ -219,7 +215,7 @@ impl S3Client {
                     CompletedPart::builder()
                         .part_number(part_number)
                         .e_tag(etag)
-                        .build()
+                        .build(),
                 );
             }
 
@@ -251,10 +247,7 @@ impl S3Client {
     }
 
     pub async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<String>> {
-        let mut request = self.client
-            .list_objects_v2()
-            .bucket(bucket)
-            .max_keys(1000);
+        let mut request = self.client.list_objects_v2().bucket(bucket).max_keys(1000);
 
         if let Some(p) = prefix {
             request = request.prefix(p);
@@ -262,7 +255,8 @@ impl S3Client {
 
         let response = request.send().await?;
 
-        let keys = response.contents()
+        let keys = response
+            .contents()
             .iter()
             .filter_map(|obj| obj.key())
             .map(|s| s.to_string())

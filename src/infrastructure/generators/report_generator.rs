@@ -1,10 +1,10 @@
 //! Report PDF generator with table support
 
+use super::typst_generator::helpers::format_number;
+use super::{DocumentGenerator, DocumentType, TypstGenerator};
 use anyhow::Result;
 use serde_json::Value;
 use std::path::PathBuf;
-use super::{DocumentGenerator, DocumentType, TypstGenerator};
-use super::typst_generator::helpers::format_number;
 
 /// Report PDF generator
 pub struct ReportGenerator {
@@ -166,26 +166,20 @@ impl DocumentGenerator for ReportGenerator {
             if !obj.contains_key("generated_date") {
                 obj.insert(
                     "generated_date".to_string(),
-                    serde_json::json!(chrono::Utc::now().format("%d/%m/%Y %H:%M").to_string())
+                    serde_json::json!(chrono::Utc::now().format("%d/%m/%Y %H:%M").to_string()),
                 );
             }
 
             // Format table columns if present
             if let Some(headers) = obj.get("table_headers").and_then(|v| v.as_array()) {
-                let columns = headers.iter()
-                    .map(|_| "1fr")
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let columns = headers.iter().map(|_| "1fr").collect::<Vec<_>>().join(", ");
 
                 obj.insert(
                     "table_columns".to_string(),
-                    serde_json::json!(format!("({})", columns))
+                    serde_json::json!(format!("({})", columns)),
                 );
 
-                obj.insert(
-                    "table_align".to_string(),
-                    serde_json::json!("center")
-                );
+                obj.insert("table_align".to_string(), serde_json::json!("center"));
             }
 
             // Format numeric values in table
@@ -210,7 +204,9 @@ impl DocumentGenerator for ReportGenerator {
             template
         };
 
-        self.typst_generator.process(final_template, &report_data).await
+        self.typst_generator
+            .process(final_template, &report_data)
+            .await
     }
 
     fn supported_types(&self) -> Vec<DocumentType> {
@@ -295,7 +291,10 @@ mod tests {
                 assert!(!pdf.is_empty());
             }
             Err(e) => {
-                println!("Could not generate report (Typst may not be installed): {}", e);
+                println!(
+                    "Could not generate report (Typst may not be installed): {}",
+                    e
+                );
             }
         }
     }

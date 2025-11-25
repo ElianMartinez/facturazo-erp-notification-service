@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rust_xlsxwriter::{Workbook, Format, Color, FormatBorder};
+use rust_xlsxwriter::{Color, Format, FormatBorder, Workbook};
 use serde_json::Value;
 
 /// Generador genérico de Excel
@@ -13,10 +13,7 @@ impl ExcelGenerator {
     /// Genera un archivo Excel desde datos JSON genéricos
     pub async fn generate(&self, data: Value) -> Result<Vec<u8>> {
         // Procesar en tarea bloqueante para trabajo intensivo de CPU
-        tokio::task::spawn_blocking(move || {
-            Self::generate_excel_from_json(data)
-        })
-        .await?
+        tokio::task::spawn_blocking(move || Self::generate_excel_from_json(data)).await?
     }
 
     fn generate_excel_from_json(data: Value) -> Result<Vec<u8>> {
@@ -45,8 +42,7 @@ impl ExcelGenerator {
             .set_border(FormatBorder::Thin);
 
         // Crear formato para celdas normales
-        let cell_format = Format::new()
-            .set_border(FormatBorder::Thin);
+        let cell_format = Format::new().set_border(FormatBorder::Thin);
 
         // Escribir encabezados si existen
         if let Some(headers) = headers {
@@ -72,31 +68,31 @@ impl ExcelGenerator {
                                     row_num,
                                     col_num,
                                     n.as_f64().unwrap_or(0.0),
-                                    &cell_format
+                                    &cell_format,
                                 )?;
-                            },
+                            }
                             Value::String(s) => {
                                 worksheet.write_string_with_format(
                                     row_num,
                                     col_num,
                                     s,
-                                    &cell_format
+                                    &cell_format,
                                 )?;
-                            },
+                            }
                             Value::Bool(b) => {
                                 worksheet.write_string_with_format(
                                     row_num,
                                     col_num,
                                     &b.to_string(),
-                                    &cell_format
+                                    &cell_format,
                                 )?;
-                            },
+                            }
                             _ => {
                                 worksheet.write_string_with_format(
                                     row_num,
                                     col_num,
                                     &value.to_string(),
-                                    &cell_format
+                                    &cell_format,
                                 )?;
                             }
                         }
@@ -107,11 +103,19 @@ impl ExcelGenerator {
 
         // Aplicar opciones adicionales si existen
         if let Some(options) = data["options"].as_object() {
-            if options.get("freeze_headers").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if options
+                .get("freeze_headers")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 worksheet.set_freeze_panes(1, 0)?;
             }
 
-            if options.get("auto_filter").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if options
+                .get("auto_filter")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 if let (Some(headers), Some(rows)) = (headers, rows) {
                     let last_col = headers.len() as u16 - 1;
                     let last_row = rows.len() as u32;
@@ -134,7 +138,6 @@ impl ExcelGenerator {
 
         Ok(buffer)
     }
-
 
     /// Genera un Excel simple desde arrays de headers y rows
     pub async fn generate_simple(

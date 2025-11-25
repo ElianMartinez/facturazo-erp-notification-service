@@ -2,11 +2,11 @@
 //!
 //! Uses rust_xlsxwriter for professional Excel document generation
 
+use super::{DocumentGenerator, DocumentType};
 use anyhow::Result;
-use rust_xlsxwriter::{Workbook, Worksheet, Format, FormatAlign, Color, FormatBorder};
+use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook, Worksheet};
 use serde_json::Value;
 use std::path::PathBuf;
-use super::{DocumentGenerator, DocumentType};
 
 /// Excel document generator
 pub struct ExcelGenerator {
@@ -40,7 +40,8 @@ impl ExcelGenerator {
 
     /// Create a worksheet from data
     fn create_worksheet(&self, workbook: &mut Workbook, data: &Value) -> Result<()> {
-        let sheet_name = data.get("sheet_name")
+        let sheet_name = data
+            .get("sheet_name")
             .and_then(|n| n.as_str())
             .unwrap_or("Sheet1");
 
@@ -89,8 +90,7 @@ impl ExcelGenerator {
             .set_border(FormatBorder::Thin);
 
         // Format for data
-        let data_format = Format::new()
-            .set_border(FormatBorder::Thin);
+        let data_format = Format::new().set_border(FormatBorder::Thin);
 
         let currency_format = Format::new()
             .set_border(FormatBorder::Thin)
@@ -100,7 +100,12 @@ impl ExcelGenerator {
         if let Some(headers) = table_data.get("headers").and_then(|h| h.as_array()) {
             for (col, header) in headers.iter().enumerate() {
                 if let Some(header_text) = header.as_str() {
-                    worksheet.write_string_with_format(row, col as u16, header_text, &header_format)?;
+                    worksheet.write_string_with_format(
+                        row,
+                        col as u16,
+                        header_text,
+                        &header_format,
+                    )?;
                 }
             }
             row += 1;
@@ -113,23 +118,44 @@ impl ExcelGenerator {
                     for (col, cell) in cells.iter().enumerate() {
                         match cell {
                             Value::String(s) => {
-                                worksheet.write_string_with_format(row, col as u16, s, &data_format)?;
+                                worksheet.write_string_with_format(
+                                    row,
+                                    col as u16,
+                                    s,
+                                    &data_format,
+                                )?;
                             }
                             Value::Number(n) => {
                                 // Check if it's a currency column
-                                let is_currency = table_data.get("currency_columns")
+                                let is_currency = table_data
+                                    .get("currency_columns")
                                     .and_then(|c| c.as_array())
                                     .map(|cols| cols.iter().any(|c| c.as_u64() == Some(col as u64)))
                                     .unwrap_or(false);
 
                                 if is_currency {
-                                    worksheet.write_number_with_format(row, col as u16, n.as_f64().unwrap_or(0.0), &currency_format)?;
+                                    worksheet.write_number_with_format(
+                                        row,
+                                        col as u16,
+                                        n.as_f64().unwrap_or(0.0),
+                                        &currency_format,
+                                    )?;
                                 } else {
-                                    worksheet.write_number_with_format(row, col as u16, n.as_f64().unwrap_or(0.0), &data_format)?;
+                                    worksheet.write_number_with_format(
+                                        row,
+                                        col as u16,
+                                        n.as_f64().unwrap_or(0.0),
+                                        &data_format,
+                                    )?;
                                 }
                             }
                             Value::Bool(b) => {
-                                worksheet.write_string_with_format(row, col as u16, if *b { "Sí" } else { "No" }, &data_format)?;
+                                worksheet.write_string_with_format(
+                                    row,
+                                    col as u16,
+                                    if *b { "Sí" } else { "No" },
+                                    &data_format,
+                                )?;
                             }
                             _ => {
                                 worksheet.write_string(row, col as u16, "")?;
@@ -154,7 +180,12 @@ impl ExcelGenerator {
                         worksheet.write_string_with_format(row, col as u16, s, &total_format)?;
                     }
                     Value::Number(n) => {
-                        worksheet.write_number_with_format(row, col as u16, n.as_f64().unwrap_or(0.0), &total_format)?;
+                        worksheet.write_number_with_format(
+                            row,
+                            col as u16,
+                            n.as_f64().unwrap_or(0.0),
+                            &total_format,
+                        )?;
                     }
                     _ => {}
                 }
@@ -185,8 +216,18 @@ impl ExcelGenerator {
                     let label = obj.get("label").and_then(|l| l.as_str()).unwrap_or("");
                     let value = obj.get("value").and_then(|v| v.as_str()).unwrap_or("");
 
-                    worksheet.write_string_with_format(start_row + i as u32 + 1, 0, label, &summary_format)?;
-                    worksheet.write_string_with_format(start_row + i as u32 + 1, 1, value, &summary_format)?;
+                    worksheet.write_string_with_format(
+                        start_row + i as u32 + 1,
+                        0,
+                        label,
+                        &summary_format,
+                    )?;
+                    worksheet.write_string_with_format(
+                        start_row + i as u32 + 1,
+                        1,
+                        value,
+                        &summary_format,
+                    )?;
                 }
             }
         }
@@ -216,24 +257,37 @@ impl ExcelGenerator {
     }
 
     fn add_invoice_header(&self, worksheet: &mut Worksheet, data: &Value) -> Result<()> {
-        let header_format = Format::new()
-            .set_font_size(14)
-            .set_bold();
+        let header_format = Format::new().set_font_size(14).set_bold();
         let bold_format = Format::new().set_bold();
 
         worksheet.write_string_with_format(0, 0, "FACTURA FISCAL", &header_format)?;
 
         if let Some(seller) = data.get("seller") {
             worksheet.write_string_with_format(2, 0, "Vendedor:", &bold_format)?;
-            worksheet.write_string(2, 1, seller.get("company_name").and_then(|n| n.as_str()).unwrap_or(""))?;
+            worksheet.write_string(
+                2,
+                1,
+                seller
+                    .get("company_name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or(""),
+            )?;
 
-            if let Some(rnc) = seller.get("rnc").and_then(|r| r.get("formatted")).and_then(|f| f.as_str()) {
+            if let Some(rnc) = seller
+                .get("rnc")
+                .and_then(|r| r.get("formatted"))
+                .and_then(|f| f.as_str())
+            {
                 worksheet.write_string_with_format(3, 0, "RNC:", &bold_format)?;
                 worksheet.write_string(3, 1, rnc)?;
             }
         }
 
-        if let Some(ncf) = data.get("ncf").and_then(|n| n.get("formatted")).and_then(|f| f.as_str()) {
+        if let Some(ncf) = data
+            .get("ncf")
+            .and_then(|n| n.get("formatted"))
+            .and_then(|f| f.as_str())
+        {
             worksheet.write_string_with_format(5, 0, "NCF:", &bold_format)?;
             worksheet.write_string(5, 1, ncf)?;
         }
@@ -246,9 +300,17 @@ impl ExcelGenerator {
 
         if let Some(customer) = data.get("customer") {
             worksheet.write_string_with_format(7, 0, "Cliente:", &bold_format)?;
-            worksheet.write_string(7, 1, customer.get("name").and_then(|n| n.as_str()).unwrap_or(""))?;
+            worksheet.write_string(
+                7,
+                1,
+                customer.get("name").and_then(|n| n.as_str()).unwrap_or(""),
+            )?;
 
-            if let Some(tax_id) = customer.get("tax_id").and_then(|t| t.get("formatted")).and_then(|f| f.as_str()) {
+            if let Some(tax_id) = customer
+                .get("tax_id")
+                .and_then(|t| t.get("formatted"))
+                .and_then(|f| f.as_str())
+            {
                 worksheet.write_string_with_format(8, 0, "RNC/Cédula:", &bold_format)?;
                 worksheet.write_string(8, 1, tax_id)?;
             }
@@ -277,11 +339,37 @@ impl ExcelGenerator {
             for (i, item) in items.iter().enumerate() {
                 let row = start_row + 1 + i as u32;
 
-                worksheet.write_number(row, 0, item.get("quantity").and_then(|q| q.as_f64()).unwrap_or(0.0))?;
-                worksheet.write_string(row, 1, item.get("description").and_then(|d| d.as_str()).unwrap_or(""))?;
-                worksheet.write_number(row, 2, item.get("unit_price").and_then(|p| p.as_f64()).unwrap_or(0.0))?;
-                worksheet.write_number(row, 3, item.get("itbis_amount").and_then(|i| i.as_f64()).unwrap_or(0.0))?;
-                worksheet.write_number(row, 4, item.get("total").and_then(|t| t.as_f64()).unwrap_or(0.0))?;
+                worksheet.write_number(
+                    row,
+                    0,
+                    item.get("quantity").and_then(|q| q.as_f64()).unwrap_or(0.0),
+                )?;
+                worksheet.write_string(
+                    row,
+                    1,
+                    item.get("description")
+                        .and_then(|d| d.as_str())
+                        .unwrap_or(""),
+                )?;
+                worksheet.write_number(
+                    row,
+                    2,
+                    item.get("unit_price")
+                        .and_then(|p| p.as_f64())
+                        .unwrap_or(0.0),
+                )?;
+                worksheet.write_number(
+                    row,
+                    3,
+                    item.get("itbis_amount")
+                        .and_then(|i| i.as_f64())
+                        .unwrap_or(0.0),
+                )?;
+                worksheet.write_number(
+                    row,
+                    4,
+                    item.get("total").and_then(|t| t.as_f64()).unwrap_or(0.0),
+                )?;
             }
         }
 
@@ -293,13 +381,30 @@ impl ExcelGenerator {
         let bold = Format::new().set_bold();
 
         worksheet.write_string_with_format(start_row, 3, "Subtotal:", &bold)?;
-        worksheet.write_number(start_row, 4, data.get("subtotal").and_then(|s| s.as_f64()).unwrap_or(0.0))?;
+        worksheet.write_number(
+            start_row,
+            4,
+            data.get("subtotal").and_then(|s| s.as_f64()).unwrap_or(0.0),
+        )?;
 
         worksheet.write_string_with_format(start_row + 1, 3, "ITBIS:", &bold)?;
-        worksheet.write_number(start_row + 1, 4, data.get("itbis_amount").and_then(|i| i.as_f64()).unwrap_or(0.0))?;
+        worksheet.write_number(
+            start_row + 1,
+            4,
+            data.get("itbis_amount")
+                .and_then(|i| i.as_f64())
+                .unwrap_or(0.0),
+        )?;
 
         worksheet.write_string_with_format(start_row + 2, 3, "TOTAL:", &bold)?;
-        worksheet.write_number_with_format(start_row + 2, 4, data.get("total_amount").and_then(|t| t.as_f64()).unwrap_or(0.0), &bold)?;
+        worksheet.write_number_with_format(
+            start_row + 2,
+            4,
+            data.get("total_amount")
+                .and_then(|t| t.as_f64())
+                .unwrap_or(0.0),
+            &bold,
+        )?;
 
         Ok(())
     }

@@ -1,7 +1,7 @@
-use std::process::Command;
-use std::fs::{self, create_dir_all};
-use std::time::Instant;
 use chrono::Local;
+use std::fs::{self, create_dir_all};
+use std::process::Command;
+use std::time::Instant;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Generador de Reportes de Benchmark");
@@ -29,7 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
 
-        let typst_content = format!(r#"
+        let typst_content = format!(
+            r#"
 #set page(
   paper: "us-letter",
   margin: (top: 1cm, bottom: 1cm, left: 1cm, right: 1cm),
@@ -66,7 +67,9 @@ Este reporte contiene {} registros de facturación para pruebas de rendimiento.
     *Tiempo de procesamiento:* Medido en aplicación
   ]
 ]
-"#, date, size, table_rows, size);
+"#,
+            date, size, table_rows, size
+        );
 
         let typst_filename = format!("temp_benchmark_{}.typ", size);
         fs::write(&typst_filename, typst_content)?;
@@ -80,7 +83,10 @@ Este reporte contiene {} registros de facturación para pruebas de rendimiento.
             .output()?;
 
         if !output.status.success() {
-            eprintln!("Error al compilar Typst: {}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "Error al compilar Typst: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
             continue;
         }
 

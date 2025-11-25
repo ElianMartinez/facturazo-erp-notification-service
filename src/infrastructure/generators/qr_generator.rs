@@ -1,11 +1,11 @@
 //! QR Code generator for fiscal documents
 
 use anyhow::Result;
-use qrcode::{QrCode, EcLevel};
-use qrcode::render::svg;
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use serde::{Serialize, Deserialize};
+use base64::Engine;
+use qrcode::render::svg;
+use qrcode::{EcLevel, QrCode};
+use serde::{Deserialize, Serialize};
 
 /// QR code generator for Dominican Republic fiscal documents
 pub struct QRGenerator;
@@ -20,7 +20,8 @@ impl QRGenerator {
         let code = QrCode::with_error_correction_level(&qr_content, EcLevel::M)?;
 
         // Render to SVG (more portable and doesn't require image crate compatibility)
-        let svg = code.render::<svg::Color>()
+        let svg = code
+            .render::<svg::Color>()
             .min_dimensions(200, 200)
             .max_dimensions(400, 400)
             .build();
@@ -51,9 +52,7 @@ impl QRGenerator {
         // Otherwise, build basic URL (core service should provide this)
         format!(
             "https://dgii.gov.do/factura/{}/{}/{}",
-            data.seller_rnc,
-            data.ncf,
-            data.invoice_number
+            data.seller_rnc, data.ncf, data.invoice_number
         )
     }
 
@@ -61,7 +60,8 @@ impl QRGenerator {
     pub fn generate_qr(content: &str) -> Result<Vec<u8>> {
         let code = QrCode::new(content)?;
 
-        let svg = code.render::<svg::Color>()
+        let svg = code
+            .render::<svg::Color>()
             .min_dimensions(200, 200)
             .max_dimensions(400, 400)
             .build();
@@ -82,7 +82,7 @@ pub struct FiscalQRData {
     pub seller_rnc: String,
     pub ncf: String,
     pub invoice_number: String,
-    pub qr_url: Option<String>,  // Pre-formatted URL from core service
+    pub qr_url: Option<String>, // Pre-formatted URL from core service
     // Optional fields if not using pre-formatted URL
     pub buyer_rnc: Option<String>,
 }

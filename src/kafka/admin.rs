@@ -2,13 +2,13 @@
 //!
 //! Create, delete, and verify Kafka topics
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
 use rdkafka::client::DefaultClientContext;
 use rdkafka::config::ClientConfig;
 use rdkafka::metadata::Metadata;
 use std::time::Duration;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// Kafka topic configuration
 #[derive(Debug, Clone)]
@@ -66,7 +66,8 @@ impl KafkaAdmin {
 
     /// Get cluster metadata
     pub async fn get_metadata(&self, timeout: Duration) -> Result<Metadata> {
-        let metadata = self.client
+        let metadata = self
+            .client
             .inner()
             .fetch_metadata(None, timeout)
             .context("Failed to fetch Kafka metadata")?;
@@ -213,14 +214,20 @@ impl KafkaAdmin {
         let metadata = self.get_metadata(Duration::from_secs(10)).await?;
 
         Ok(ClusterInfo {
-            brokers: metadata.brokers().iter().map(|b| {
-                BrokerInfo {
+            brokers: metadata
+                .brokers()
+                .iter()
+                .map(|b| BrokerInfo {
                     id: b.id(),
                     host: b.host().to_string(),
                     port: b.port() as u16,
-                }
-            }).collect(),
-            topics_count: metadata.topics().iter().filter(|t| !t.name().starts_with("__")).count(),
+                })
+                .collect(),
+            topics_count: metadata
+                .topics()
+                .iter()
+                .filter(|t| !t.name().starts_with("__"))
+                .count(),
         })
     }
 }
@@ -254,8 +261,7 @@ mod tests {
 
     #[test]
     fn test_topic_config() {
-        let config = TopicConfig::new("test-topic")
-            .with_partitions(6);
+        let config = TopicConfig::new("test-topic").with_partitions(6);
 
         assert_eq!(config.name, "test-topic");
         assert_eq!(config.partitions, 6);

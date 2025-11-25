@@ -4,11 +4,11 @@
 //! that coordinate between domain and infrastructure layers.
 
 pub mod commands;
-pub mod queries;
 pub mod orchestrators;
+pub mod queries;
 
-use std::sync::Arc;
 use anyhow::Result;
+use std::sync::Arc;
 
 /// Application services container
 pub struct ApplicationServices {

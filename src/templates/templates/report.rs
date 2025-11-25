@@ -1,7 +1,7 @@
-use anyhow::{Result, Context};
-use serde_json::Value;
-use crate::templates::template_trait::{TypstTemplate, utils};
 use crate::templates::template_models::ReportData;
+use crate::templates::template_trait::{utils, TypstTemplate};
+use anyhow::{Context, Result};
+use serde_json::Value;
 
 pub struct ReportTemplate;
 
@@ -59,7 +59,10 @@ impl ReportTemplate {
         // Agregar highlights
         if !summary.highlights.is_empty() {
             let highlights = summary.highlights.join(", ");
-            items.push(format!("[*Destacados:*], [{}]", utils::escape_typst(&highlights)));
+            items.push(format!(
+                "[*Destacados:*], [{}]",
+                utils::escape_typst(&highlights)
+            ));
         }
 
         items.join(",\n    ")
@@ -73,7 +76,8 @@ impl TypstTemplate for ReportTemplate {
         let report: ReportData = serde_json::from_value(data.clone())
             .context("Error deserializando datos de reporte")?;
 
-        let content = format!(r#"#set document(title: "{}", author: "Sistema de Reportes")
+        let content = format!(
+            r#"#set document(title: "{}", author: "Sistema de Reportes")
 #set page(paper: "us-letter", margin: 2cm, numbering: "1 / 1")
 #set text(font: "Arial", size: 10pt)
 #set par(justify: true)
@@ -121,7 +125,8 @@ impl TypstTemplate for ReportTemplate {
             report.period.end_date,
             // Summary si existe
             if let Some(ref summary) = report.summary {
-                format!(r#"
+                format!(
+                    r#"
 #v(15pt)
 #rect(width: 100%, fill: rgb(255, 250, 240), stroke: 1pt + rgb(255, 140, 0), radius: 3pt, inset: 10pt)[
   #text(size: 12pt, weight: "bold")[Resumen Ejecutivo]
@@ -131,13 +136,16 @@ impl TypstTemplate for ReportTemplate {
     row-gutter: 3pt,
     {}
   )
-]"#, self.format_summary(summary))
+]"#,
+                    self.format_summary(summary)
+                )
             } else {
                 String::new()
             },
             // Tabla de datos
             if !report.data.is_empty() {
-                format!(r#"#table(
+                format!(
+                    r#"#table(
   columns: {},
   stroke: 0.5pt + gray,
   fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
@@ -145,7 +153,8 @@ impl TypstTemplate for ReportTemplate {
   {}
 )"#,
                     report.data.first().map(|r| r.len()).unwrap_or(2),
-                    self.format_table_data(&report.data))
+                    self.format_table_data(&report.data)
+                )
             } else {
                 String::new()
             },

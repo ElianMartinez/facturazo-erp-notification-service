@@ -11,9 +11,9 @@ pub enum OutputFormat {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Priority {
-    High,    // < 1 min
-    Normal,  // < 5 min
-    Low,     // Best effort
+    High,   // < 1 min
+    Normal, // < 5 min
+    Low,    // Best effort
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,17 +49,17 @@ pub struct CustomerInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NumberFormat {
-    English,    // 1,234.56
-    European,   // 1.234,56
-    Indian,     // 12,34,567
+    English,  // 1,234.56
+    European, // 1.234,56
+    Indian,   // 12,34,567
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderOptions {
-    pub locale: String,           // "es-DO", "en-US"
-    pub currency: String,         // "DOP", "USD"
-    pub currency_symbol: String,  // "$", "RD$"
-    pub date_format: String,      // "DD/MM/YYYY", "MM/DD/YYYY"
+    pub locale: String,          // "es-DO", "en-US"
+    pub currency: String,        // "DOP", "USD"
+    pub currency_symbol: String, // "$", "RD$"
+    pub date_format: String,     // "DD/MM/YYYY", "MM/DD/YYYY"
     pub number_format: NumberFormat,
     pub include_qr: Option<bool>,
     pub watermark: Option<String>,

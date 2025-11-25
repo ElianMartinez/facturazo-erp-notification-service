@@ -1,8 +1,10 @@
-use pdf_services::templates::templates::{QuotationTemplate, QuotationData, QuotationItem, Customer, Company, MonthlyRent};
+use chrono::Local;
 use pdf_services::templates::template_trait::TypstTemplate;
+use pdf_services::templates::templates::{
+    Company, Customer, MonthlyRent, QuotationData, QuotationItem, QuotationTemplate,
+};
 use std::fs;
 use std::process::Command;
-use chrono::Local;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 Generador de Cotizaciones - Facturazo");
@@ -29,20 +31,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let items = vec![
         QuotationItem {
             quantity: 1,
-            description: "Implementación de sistema y Proceso de Certificación de la empresa".to_string(),
+            description: "Implementación de sistema y Proceso de Certificación de la empresa"
+                .to_string(),
             price: 5000.00, // USD
             tax_rate: 0.18, // 18% ITBIS
         },
         QuotationItem {
             quantity: 26,
             description: "Teléfonos IP profesionales con configuración completa".to_string(),
-            price: 200.00, // USD por unidad
+            price: 200.00,  // USD por unidad
             tax_rate: 0.18, // 18% ITBIS
         },
         QuotationItem {
             quantity: 1,
             description: "Soporte técnico especializado 24/7 (incluido en el servicio)".to_string(),
-            price: 0.00, // USD - Incluido sin costo
+            price: 0.00,    // USD - Incluido sin costo
             tax_rate: 0.00, // Sin impuesto
         },
     ];
@@ -67,12 +70,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Generar PDF
     let output_path = "cotizaciones/cotizacion_credigas.pdf";
-    println!("📋 Generando cotización para: {}", quotation_data.customer.name);
+    println!(
+        "📋 Generando cotización para: {}",
+        quotation_data.customer.name
+    );
     println!("📦 Items en la cotización: {}", quotation_data.items.len());
     println!("💰 Subtotal: ${:.2}", quotation_data.subtotal());
     println!("💸 Descuento: ${:.2}", quotation_data.discount);
     println!("🧾 ITBIS Total: ${:.2}", quotation_data.total_tax());
-    println!("💵 Total Final: ${:.2}", quotation_data.total_after_discount());
+    println!(
+        "💵 Total Final: ${:.2}",
+        quotation_data.total_after_discount()
+    );
 
     let template = QuotationTemplate::new();
     let typst_content = template.generate(&serde_json::to_value(&quotation_data)?)?;
@@ -89,7 +98,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // fs::remove_file(&temp_file)?;
 
     if !output.status.success() {
-        eprintln!("\n❌ Error generando cotización: {}", String::from_utf8_lossy(&output.stderr));
+        eprintln!(
+            "\n❌ Error generando cotización: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         return Err("Error compilando Typst".into());
     }
 

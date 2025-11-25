@@ -2,11 +2,11 @@
 //!
 //! Provides liveness and readiness probes for Kubernetes deployments
 
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use serde::Serialize;
 
 /// Health status for a dependency
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -71,12 +71,19 @@ impl HealthStatus {
     }
 
     pub fn is_ready(&self) -> bool {
-        matches!(self.status, DependencyStatus::Healthy | DependencyStatus::Degraded)
+        matches!(
+            self.status,
+            DependencyStatus::Healthy | DependencyStatus::Degraded
+        )
     }
 }
 
 /// Health check function type
-pub type HealthCheckFn = Arc<dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = DependencyHealth> + Send>> + Send + Sync>;
+pub type HealthCheckFn = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = DependencyHealth> + Send>>
+        + Send
+        + Sync,
+>;
 
 /// Health checker for all dependencies
 pub struct HealthChecker {
@@ -167,17 +174,14 @@ pub mod checks {
     {
         let start = Instant::now();
         match ping().await {
-            Ok(()) => DependencyHealth::healthy("database")
-                .with_latency(start.elapsed()),
+            Ok(()) => DependencyHealth::healthy("database").with_latency(start.elapsed()),
             Err(e) => DependencyHealth::unhealthy("database", &e.to_string()),
         }
     }
 
     /// HTTP endpoint health check
     pub async fn http_check(name: &str, url: &str, timeout: Duration) -> DependencyHealth {
-        let client = reqwest::Client::builder()
-            .timeout(timeout)
-            .build();
+        let client = reqwest::Client::builder().timeout(timeout).build();
 
         let client = match client {
             Ok(c) => c,
@@ -189,9 +193,7 @@ pub mod checks {
             Ok(resp) if resp.status().is_success() => {
                 DependencyHealth::healthy(name).with_latency(start.elapsed())
             }
-            Ok(resp) => {
-                DependencyHealth::unhealthy(name, &format!("HTTP {}", resp.status()))
-            }
+            Ok(resp) => DependencyHealth::unhealthy(name, &format!("HTTP {}", resp.status())),
             Err(e) => DependencyHealth::unhealthy(name, &e.to_string()),
         }
     }
@@ -260,9 +262,11 @@ mod tests {
     async fn test_health_checker() {
         let checker = HealthChecker::new();
 
-        checker.register("always_healthy", || async {
-            DependencyHealth::healthy("always_healthy")
-        }).await;
+        checker
+            .register("always_healthy", || async {
+                DependencyHealth::healthy("always_healthy")
+            })
+            .await;
 
         let status = checker.check_all().await;
         assert!(status.is_healthy());

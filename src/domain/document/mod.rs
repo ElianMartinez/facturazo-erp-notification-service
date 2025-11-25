@@ -111,7 +111,9 @@ impl DocumentFormat {
     pub fn mime_type(&self) -> &str {
         match self {
             DocumentFormat::Pdf => "application/pdf",
-            DocumentFormat::Excel => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            DocumentFormat::Excel => {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            }
             DocumentFormat::Csv => "text/csv",
             DocumentFormat::Html => "text/html",
         }

@@ -1,9 +1,9 @@
 //! Quotation PDF generator
 
+use super::{DocumentGenerator, DocumentType, TypstGenerator};
 use anyhow::Result;
 use serde_json::Value;
 use std::path::PathBuf;
-use super::{DocumentGenerator, DocumentType, TypstGenerator};
 
 const DEFAULT_QUOTATION_TEMPLATE: &str = r#"
 #set page(paper: "us-letter", margin: 1.5cm)

@@ -1,7 +1,7 @@
-use anyhow::{Result, Context};
-use serde_json::Value;
-use crate::templates::template_trait::{TypstTemplate, utils};
 use crate::templates::template_models::{InvoiceData, InvoiceItem};
+use crate::templates::template_trait::{utils, TypstTemplate};
+use anyhow::{Context, Result};
+use serde_json::Value;
 
 pub struct FiscalInvoiceTemplate;
 
@@ -36,17 +36,15 @@ impl FiscalInvoiceTemplate {
         let qr_section = if let Some(fiscal) = &invoice.fiscal_info {
             let qr_data = format!(
                 "https://dgii.gov.do/validacion?ncf={}&rnc={}&monto={:.2}&codigo={}",
-                fiscal.e_ncf,
-                company.tax_id,
-                totals.total,
-                fiscal.security_code
+                fiscal.e_ncf, company.tax_id, totals.total, fiscal.security_code
             );
 
             // Generar QR (en producción, esto debería manejarse mejor)
             let qr_path = format!("/tmp/qr_{}.png", fiscal.e_ncf);
             utils::generate_qr_code(&qr_data, &qr_path)?;
 
-            format!(r#"
+            format!(
+                r#"
 // Código QR y datos fiscales
 #grid(
   columns: (1fr, 250pt),
@@ -62,17 +60,22 @@ impl FiscalInvoiceTemplate {
     // Sección de totales se coloca aquí
     TOTALES_PLACEHOLDER
   ]
-)"#, qr_path, fiscal.security_code, fiscal.signature_date)
+)"#,
+                qr_path, fiscal.security_code, fiscal.signature_date
+            )
         } else {
-            format!(r#"
+            format!(
+                r#"
 // Sección de totales
 #align(right)[
   TOTALES_PLACEHOLDER
-]"#)
+]"#
+            )
         };
 
         // Construir el documento completo
-        let content = format!(r#"#set document(title: "Factura Fiscal Electrónica - {}", author: "{}")
+        let content = format!(
+            r#"#set document(title: "Factura Fiscal Electrónica - {}", author: "{}")
 #set page(
   paper: "us-letter",
   margin: (left: 20mm, right: 20mm, top: 20mm, bottom: 20mm)
@@ -173,7 +176,12 @@ impl FiscalInvoiceTemplate {
             invoice.invoice_number,
             company.name,
             // Marca de agua si está pagado
-            if invoice.payment_info.as_ref().map(|p| p.paid).unwrap_or(false) {
+            if invoice
+                .payment_info
+                .as_ref()
+                .map(|p| p.paid)
+                .unwrap_or(false)
+            {
                 r#"#place(
   center + horizon,
   rotate(45deg)[
@@ -184,38 +192,53 @@ impl FiscalInvoiceTemplate {
                 ""
             },
             // Iniciales de la empresa
-            company.name.chars()
+            company
+                .name
+                .chars()
                 .filter(|c| c.is_uppercase())
                 .take(2)
                 .collect::<String>(),
             // Datos de la empresa
             utils::escape_typst(&company.name),
-            utils::escape_typst(&company.legal_name.clone().unwrap_or_else(|| company.name.clone())),
+            utils::escape_typst(
+                &company
+                    .legal_name
+                    .clone()
+                    .unwrap_or_else(|| company.name.clone())
+            ),
             "Principal", // branch no existe en el modelo actual
             company.tax_id,
-            utils::escape_typst(&format!("{}, {}, {}",
-                company.address.street,
-                company.address.city,
-                company.address.country)),
+            utils::escape_typst(&format!(
+                "{}, {}, {}",
+                company.address.street, company.address.city, company.address.country
+            )),
             company.phone.as_deref().unwrap_or(""),
             utils::escape_typst(company.email.as_deref().unwrap_or("")),
             invoice.issue_date,
             // Información fiscal si existe
             if let Some(fiscal) = &invoice.fiscal_info {
-                format!("#text(size: 10pt, weight: \"bold\")[e-NCF: {}]", fiscal.e_ncf)
+                format!(
+                    "#text(size: 10pt, weight: \"bold\")[e-NCF: {}]",
+                    fiscal.e_ncf
+                )
             } else {
-                format!("#text(size: 10pt, weight: \"bold\")[Factura No. {}]", invoice.invoice_number)
+                format!(
+                    "#text(size: 10pt, weight: \"bold\")[Factura No. {}]",
+                    invoice.invoice_number
+                )
             },
             invoice.due_date,
             // Datos del cliente
             utils::escape_typst(&client.name),
             client.tax_id,
             if let Some(address) = &client.address {
-                format!("#text(size: 9pt)[Dirección: {}] \\",
-                    utils::escape_typst(&format!("{}, {}, {}",
-                        address.street,
-                        address.city,
-                        address.country)))
+                format!(
+                    "#text(size: 9pt)[Dirección: {}] \\",
+                    utils::escape_typst(&format!(
+                        "{}, {}, {}",
+                        address.street, address.city, address.country
+                    ))
+                )
             } else {
                 String::new()
             },
@@ -225,27 +248,34 @@ impl FiscalInvoiceTemplate {
             qr_section.replace("TOTALES_PLACEHOLDER", &self.format_totals(&invoice.totals)),
             // Notas
             if let Some(notes) = &invoice.notes {
-                format!(r#"
+                format!(
+                    r#"
 #v(20pt)
 #text(size: 9pt, weight: "bold")[Notas:]
-#text(size: 9pt)[{}]"#, utils::escape_typst(notes))
+#text(size: 9pt)[{}]"#,
+                    utils::escape_typst(notes)
+                )
             } else {
                 String::new()
             },
             // Información de pago
             if let Some(payment) = &invoice.payment_info {
-                format!(r#"
+                format!(
+                    r#"
 #v(10pt)
 #text(size: 9pt)[Método de pago: {} | Términos: {}]"#,
                     payment.method,
-                    payment.terms.as_deref().unwrap_or("Inmediato"))
+                    payment.terms.as_deref().unwrap_or("Inmediato")
+                )
             } else {
                 String::new()
             },
             // Footer
             if let Some(fiscal) = &invoice.fiscal_info {
-                format!("Esta factura fiscal electrónica es válida hasta: {}",
-                    fiscal.expiration_date.as_deref().unwrap_or("Indefinido"))
+                format!(
+                    "Esta factura fiscal electrónica es válida hasta: {}",
+                    fiscal.expiration_date.as_deref().unwrap_or("Indefinido")
+                )
             } else {
                 "Conserve este documento para futuras referencias.".to_string()
             }
@@ -255,7 +285,8 @@ impl FiscalInvoiceTemplate {
     }
 
     fn format_totals(&self, totals: &crate::templates::template_models::InvoiceTotals) -> String {
-        format!(r#"#rect(width: 100%, fill: rgb(245, 245, 245), stroke: 0.5pt + rgb(200, 200, 200), radius: 3pt)[
+        format!(
+            r#"#rect(width: 100%, fill: rgb(245, 245, 245), stroke: 0.5pt + rgb(200, 200, 200), radius: 3pt)[
     #pad(10pt)[
       #grid(
         columns: (150pt, 80pt),
@@ -274,10 +305,14 @@ impl FiscalInvoiceTemplate {
       )
     ]
   ]"#,
-            totals.currency, totals.subtotal,
-            totals.currency, totals.discount_amount.unwrap_or(0.0),
-            totals.currency, totals.tax_amount,
-            totals.currency, totals.total
+            totals.currency,
+            totals.subtotal,
+            totals.currency,
+            totals.discount_amount.unwrap_or(0.0),
+            totals.currency,
+            totals.tax_amount,
+            totals.currency,
+            totals.total
         )
     }
 }
@@ -312,7 +347,7 @@ impl TypstTemplate for FiscalInvoiceTemplate {
             "company_info",
             "client_info",
             "items",
-            "totals"
+            "totals",
         ];
 
         for field in required {

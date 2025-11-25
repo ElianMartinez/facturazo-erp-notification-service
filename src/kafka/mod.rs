@@ -9,12 +9,12 @@ use rdkafka::producer::FutureProducer;
 use std::sync::Arc;
 use tracing::info;
 
-pub mod consumer;
-pub mod producer;
-pub mod handlers;
 pub mod admin;
+pub mod consumer;
+pub mod handlers;
+pub mod producer;
 
-pub use admin::{KafkaAdmin, TopicConfig, TopicInfo, ClusterInfo};
+pub use admin::{ClusterInfo, KafkaAdmin, TopicConfig, TopicInfo};
 
 /// Kafka client wrapper
 pub struct KafkaClient {

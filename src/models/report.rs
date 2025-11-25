@@ -1,6 +1,6 @@
+use super::RenderOptions;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::RenderOptions;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReportRequest {
@@ -15,9 +15,7 @@ pub struct ReportRequest {
 #[serde(tag = "type")]
 pub enum DataSource {
     /// Data inline (< 1MB)
-    Inline {
-        rows: Vec<serde_json::Value>,
-    },
+    Inline { rows: Vec<serde_json::Value> },
 
     /// Data comprimida (1-10MB)
     Compressed {
@@ -197,8 +195,8 @@ pub struct ReportOptions {
     pub include_summary: bool,
     pub include_charts: bool,
     pub page_size: Option<usize>, // Para paginación en PDF
-    pub freeze_headers: bool,      // Para Excel
-    pub auto_filter: bool,         // Para Excel
+    pub freeze_headers: bool,     // Para Excel
+    pub auto_filter: bool,        // Para Excel
     pub conditional_formatting: Option<Vec<ConditionalFormat>>,
 }
 
