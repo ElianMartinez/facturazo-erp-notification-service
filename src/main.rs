@@ -91,8 +91,7 @@ fn load_config() -> Result<AppConfig> {
         smtp_pass: env::var("SMTP_PASS").ok(),
         smtp_from_email: env::var("SMTP_FROM_EMAIL")
             .unwrap_or_else(|_| "noreply@example.com".to_string()),
-        smtp_from_name: env::var("SMTP_FROM_NAME")
-            .unwrap_or_else(|_| "PDF Service".to_string()),
+        smtp_from_name: env::var("SMTP_FROM_NAME").unwrap_or_else(|_| "PDF Service".to_string()),
         // WhatsApp EvolutionAPI configuration
         evolution_api_url: env::var("EVOLUTION_API_URL").ok(),
         evolution_api_key: env::var("EVOLUTION_API_KEY").ok(),

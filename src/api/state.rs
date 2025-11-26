@@ -120,7 +120,9 @@ impl ApiState {
                 true, // use TLS
             )))
         } else {
-            tracing::warn!("Email service not configured - SMTP_HOST, SMTP_USER, SMTP_PASS required");
+            tracing::warn!(
+                "Email service not configured - SMTP_HOST, SMTP_USER, SMTP_PASS required"
+            );
             None
         };
 
