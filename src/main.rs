@@ -81,6 +81,22 @@ fn load_config() -> Result<AppConfig> {
             .unwrap_or_else(|_| "true".to_string())
             .parse::<bool>()
             .unwrap_or(true),
+        // Email SMTP configuration
+        smtp_host: env::var("SMTP_HOST").ok(),
+        smtp_port: env::var("SMTP_PORT")
+            .unwrap_or_else(|_| "587".to_string())
+            .parse()
+            .unwrap_or(587),
+        smtp_user: env::var("SMTP_USER").ok(),
+        smtp_pass: env::var("SMTP_PASS").ok(),
+        smtp_from_email: env::var("SMTP_FROM_EMAIL")
+            .unwrap_or_else(|_| "noreply@example.com".to_string()),
+        smtp_from_name: env::var("SMTP_FROM_NAME")
+            .unwrap_or_else(|_| "PDF Service".to_string()),
+        // WhatsApp EvolutionAPI configuration
+        evolution_api_url: env::var("EVOLUTION_API_URL").ok(),
+        evolution_api_key: env::var("EVOLUTION_API_KEY").ok(),
+        evolution_instance: env::var("EVOLUTION_INSTANCE").ok(),
     };
 
     Ok(config)
