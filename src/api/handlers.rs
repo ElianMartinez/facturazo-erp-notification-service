@@ -11,7 +11,9 @@ use crate::application::commands::{GenerateDocumentCommand, SendNotificationComm
 use crate::domain::document::{DocumentFormat, DocumentType as DomainDocType};
 use crate::domain::notification::{NotificationChannel, NotificationPriority};
 use crate::generators::{ExcelGenerator, PdfGenerator};
-use crate::models::{DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, NotificationConfig, Priority};
+use crate::models::{
+    DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, NotificationConfig, Priority,
+};
 
 /// Generate document synchronously (small documents only)
 pub async fn generate_sync(
