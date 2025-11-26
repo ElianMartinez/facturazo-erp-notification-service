@@ -2,9 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop, v2-microservice]
-  pull_request:
     branches: [main, develop]
+  pull_request:
+    branches: [main]
   release:
     types: [published]
 
