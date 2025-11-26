@@ -48,3 +48,18 @@ Este proyecto en Rust genera documentos PDF usando Typst como motor de renderiza
 ### Estructura de directorios generados
 - `facturas/`: Facturas fiscales generadas
 - `reportes/`: Reportes de benchmark generados
+
+## CI/CD Pipeline
+
+El proyecto usa GitHub Actions con self-hosted runners.
+
+### Jobs del pipeline
+| Evento | Build | Lint | Test | Security | Docker | Deploy |
+|--------|-------|------|------|----------|--------|--------|
+| PR a main | ✓ | ✓ | ✓ | ✓ | ❌ | ❌ |
+| Push a main | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Release | ✓ | ✓ | ✓ | ✓ | ✓ (prod) | ❌ |
+
+### Docker tags
+- `dev-latest` - Push a main
+- `prod-latest` - Release publicado
