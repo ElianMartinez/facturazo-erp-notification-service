@@ -2,7 +2,7 @@ use governor::{clock::DefaultClock, state::keyed::DashMapStateStore, Quota, Rate
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::application::orchestrators::DocumentOrchestrator;
+use crate::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use crate::infrastructure::cache::CacheService;
 use crate::infrastructure::generators::GeneratorFactory;
 use crate::infrastructure::notifications::{EmailService, EvolutionApiClient};
@@ -21,6 +21,7 @@ pub struct ApiState {
     pub config: Arc<AppConfig>,
     pub generator_factory: Arc<GeneratorFactory>,
     pub document_orchestrator: Arc<DocumentOrchestrator>,
+    pub notification_orchestrator: Arc<NotificationOrchestrator>,
     pub cache_service: Arc<CacheService>,
     pub storage_service: Arc<StorageService>,
 }
@@ -148,8 +149,15 @@ impl ApiState {
             generator_factory.clone(),
             storage_service.clone(),
             cache_service.clone(),
+            email_service.clone(),
+            whatsapp_service.clone(),
+        ));
+
+        // Initialize notification orchestrator
+        let notification_orchestrator = Arc::new(NotificationOrchestrator::new(
             email_service,
             whatsapp_service,
+            cache_service.clone(),
         ));
 
         Ok(ApiState {
@@ -159,6 +167,7 @@ impl ApiState {
             config: Arc::new(config),
             generator_factory,
             document_orchestrator,
+            notification_orchestrator,
             cache_service,
             storage_service,
         })

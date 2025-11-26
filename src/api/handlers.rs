@@ -7,10 +7,11 @@ use uuid::Uuid;
 
 use super::error::ApiResult;
 use super::state::ApiState;
-use crate::application::commands::GenerateDocumentCommand;
+use crate::application::commands::{GenerateDocumentCommand, SendNotificationCommand};
 use crate::domain::document::{DocumentFormat, DocumentType as DomainDocType};
+use crate::domain::notification::{NotificationChannel, NotificationPriority};
 use crate::generators::{ExcelGenerator, PdfGenerator};
-use crate::models::{DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, Priority};
+use crate::models::{DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, NotificationConfig, Priority};
 
 /// Generate document synchronously (small documents only)
 pub async fn generate_sync(
@@ -262,12 +263,23 @@ async fn generate_invoice_sync(
         template_id: request.template_id.clone(),
         template_version: "latest".to_string(),
         storage_enabled: true,
-        notification_enabled: false,
+        notification_enabled: request.notification.is_some(),
         priority: crate::application::commands::Priority::Normal,
     };
 
     // Use orchestrator to generate and store
     let result = state.document_orchestrator.execute(command).await?;
+
+    // Send notifications if configured
+    if let Some(ref notification_config) = request.notification {
+        send_notifications(
+            state,
+            notification_config,
+            &result.document_id,
+            &request.metadata.tenant_id.to_string(),
+        )
+        .await;
+    }
 
     // Return URL or file path
     result
@@ -289,12 +301,23 @@ async fn generate_report_sync(
         template_id: request.template_id.clone(),
         template_version: "latest".to_string(),
         storage_enabled: true,
-        notification_enabled: false,
+        notification_enabled: request.notification.is_some(),
         priority: crate::application::commands::Priority::Normal,
     };
 
     // Use orchestrator to generate and store
     let result = state.document_orchestrator.execute(command).await?;
+
+    // Send notifications if configured
+    if let Some(ref notification_config) = request.notification {
+        send_notifications(
+            state,
+            notification_config,
+            &result.document_id,
+            &request.metadata.tenant_id.to_string(),
+        )
+        .await;
+    }
 
     // Return URL or file path
     result
@@ -398,4 +421,82 @@ async fn process_document_async(
     );
 
     Ok(())
+}
+
+/// Helper function to send notifications via WhatsApp and/or Email
+async fn send_notifications(
+    state: &ApiState,
+    config: &NotificationConfig,
+    document_id: &str,
+    tenant_id: &str,
+) {
+    // Send WhatsApp notification
+    if let Some(ref whatsapp) = config.whatsapp {
+        let message = whatsapp
+            .message
+            .clone()
+            .unwrap_or_else(|| format!("📄 Tu documento {} está listo.", document_id));
+
+        let command = SendNotificationCommand {
+            tenant_id: tenant_id.to_string(),
+            channel: NotificationChannel::Whatsapp,
+            recipient: whatsapp.phone.clone(),
+            subject: None,
+            template_id: None,
+            template_vars: json!({ "message": message }),
+            priority: NotificationPriority::Normal,
+            document_id: Some(document_id.to_string()),
+            attachments: vec![],
+        };
+
+        match state.notification_orchestrator.execute(command).await {
+            Ok(result) => {
+                tracing::info!(
+                    "WhatsApp notification sent to {}: {:?}",
+                    whatsapp.phone,
+                    result.status
+                );
+            }
+            Err(e) => {
+                tracing::error!("Failed to send WhatsApp notification: {}", e);
+            }
+        }
+    }
+
+    // Send Email notification
+    if let Some(ref email) = config.email {
+        let subject = email
+            .subject
+            .clone()
+            .unwrap_or_else(|| format!("Documento {} disponible", document_id));
+        let body = email
+            .body
+            .clone()
+            .unwrap_or_else(|| format!("Tu documento {} está listo para descargar.", document_id));
+
+        let command = SendNotificationCommand {
+            tenant_id: tenant_id.to_string(),
+            channel: NotificationChannel::Email,
+            recipient: email.to.clone(),
+            subject: Some(subject),
+            template_id: None,
+            template_vars: json!({ "body": body }),
+            priority: NotificationPriority::Normal,
+            document_id: Some(document_id.to_string()),
+            attachments: vec![],
+        };
+
+        match state.notification_orchestrator.execute(command).await {
+            Ok(result) => {
+                tracing::info!(
+                    "Email notification sent to {}: {:?}",
+                    email.to,
+                    result.status
+                );
+            }
+            Err(e) => {
+                tracing::error!("Failed to send email notification: {}", e);
+            }
+        }
+    }
 }

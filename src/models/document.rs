@@ -15,6 +15,38 @@ pub struct DocumentRequest {
     pub format: OutputFormat,
     pub callback_url: Option<String>,
     pub metadata: DocumentMetadata,
+    /// Notification configuration (optional)
+    #[serde(default)]
+    pub notification: Option<NotificationConfig>,
+}
+
+/// Configuration for document delivery notifications
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationConfig {
+    /// Enable WhatsApp notification
+    #[serde(default)]
+    pub whatsapp: Option<WhatsAppNotification>,
+    /// Enable Email notification
+    #[serde(default)]
+    pub email: Option<EmailNotification>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhatsAppNotification {
+    /// Recipient phone number (with country code, e.g., "18296630497")
+    pub phone: String,
+    /// Custom message (optional)
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailNotification {
+    /// Recipient email address
+    pub to: String,
+    /// Email subject
+    pub subject: Option<String>,
+    /// Custom message body
+    pub body: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
