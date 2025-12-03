@@ -11,6 +11,7 @@ use uuid::Uuid;
 /// Typst-based PDF generator
 pub struct TypstGenerator {
     work_dir: PathBuf,
+    font_dir: Option<PathBuf>,
     handlebars: Handlebars<'static>,
 }
 
@@ -19,10 +20,38 @@ impl TypstGenerator {
         let mut handlebars = Handlebars::new();
         handlebars.set_strict_mode(false); // Allow missing variables
 
+        // Try to find fonts directory relative to work_dir or in standard locations
+        let font_dir = Self::find_font_dir(&work_dir);
+
         Self {
             work_dir,
+            font_dir,
             handlebars,
         }
+    }
+
+    /// Find the fonts directory
+    fn find_font_dir(work_dir: &Path) -> Option<PathBuf> {
+        // Check common locations
+        let candidates = [
+            work_dir.join("fonts"),
+            work_dir.parent().map(|p| p.join("fonts")).unwrap_or_default(),
+            PathBuf::from("fonts"),
+            PathBuf::from("./fonts"),
+        ];
+
+        for candidate in candidates {
+            if candidate.exists() && candidate.is_dir() {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
+    /// Set custom font directory
+    pub fn with_font_dir(mut self, font_dir: PathBuf) -> Self {
+        self.font_dir = Some(font_dir);
+        self
     }
 
     /// Generate PDF using Typst
@@ -39,12 +68,17 @@ impl TypstGenerator {
         fs::write(&typst_file, typst_content).await?;
 
         // Run Typst compiler
-        let output = Command::new("typst")
-            .arg("compile")
-            .arg(&typst_file)
-            .arg(&pdf_file)
-            .output()
-            .await?;
+        let mut cmd = Command::new("typst");
+        cmd.arg("compile");
+
+        // Add font directory if available
+        if let Some(ref font_dir) = self.font_dir {
+            cmd.arg("--font-path").arg(font_dir);
+        }
+
+        cmd.arg(&typst_file).arg(&pdf_file);
+
+        let output = cmd.output().await?;
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
@@ -195,7 +229,7 @@ mod tests {
 
         let typst_content = r#"
 #set page(paper: "us-letter")
-#set text(font: "Arial", size: 12pt)
+#set text(font: "Inter", size: 12pt)
 
 = Test Document
 

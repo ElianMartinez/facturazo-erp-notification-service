@@ -27,7 +27,7 @@ impl ReportGenerator {
   numbering: "1 / 1",
 )
 
-#set text(font: "Arial", size: 10pt)
+#set text(font: "Inter", size: 10pt)
 
 // Header
 #align(center)[

@@ -26,7 +26,7 @@ impl InvoiceGenerator {
   margin: (top: 1.5cm, bottom: 1.5cm, left: 1.5cm, right: 1.5cm),
 )
 
-#set text(font: "Arial", size: 10pt, lang: "es")
+#set text(font: "Inter", size: 10pt, lang: "es")
 #set table(stroke: 0.5pt)
 
 // Helper functions

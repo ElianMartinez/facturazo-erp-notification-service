@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 const DEFAULT_QUOTATION_TEMPLATE: &str = r#"
 #set page(paper: "us-letter", margin: 1.5cm)
-#set text(font: "Arial", size: 10pt)
+#set text(font: "Inter", size: 10pt)
 
 = Quotation / Cotización
 

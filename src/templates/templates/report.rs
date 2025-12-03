@@ -79,7 +79,7 @@ impl TypstTemplate for ReportTemplate {
         let content = format!(
             r#"#set document(title: "{}", author: "Sistema de Reportes")
 #set page(paper: "us-letter", margin: 2cm, numbering: "1 / 1")
-#set text(font: "Arial", size: 10pt)
+#set text(font: "Inter", size: 10pt)
 #set par(justify: true)
 
 // Encabezado

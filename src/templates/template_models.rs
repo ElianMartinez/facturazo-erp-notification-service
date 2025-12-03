@@ -164,11 +164,110 @@ pub struct ReceiptItem {
     pub total: f64,
 }
 
+// ============================================
+// Cash Register / Cuadre de Caja
+// ============================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CashRegisterData {
+    pub document_code: String,
+    pub date: String,
+    pub company_info: CompanyInfo,
+    pub cashier: CashierInfo,
+    pub transactions_count: u32,
+    pub status: CashRegisterStatus,
+    pub income: Vec<CashRegisterItem>,
+    pub expenses: Vec<CashRegisterItem>,
+    pub summary: CashRegisterSummary,
+    pub denominations: Option<Vec<Denomination>>,
+    pub payment_methods: Vec<PaymentMethodBalance>,
+    pub final_balance: FinalBalance,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CashierInfo {
+    pub name: String,
+    pub id: Option<String>,
+    pub shift: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CashRegisterStatus {
+    Balanced,   // Cuadrado
+    Surplus,    // Sobrante
+    Shortage,   // Faltante
+}
+
+impl CashRegisterStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CashRegisterStatus::Balanced => "Cuadrado",
+            CashRegisterStatus::Surplus => "Sobrante",
+            CashRegisterStatus::Shortage => "Faltante",
+        }
+    }
+
+    pub fn color(&self) -> &'static str {
+        match self {
+            CashRegisterStatus::Balanced => "#64748B",  // Gray
+            CashRegisterStatus::Surplus => "#059669",   // Green
+            CashRegisterStatus::Shortage => "#DC2626",  // Red
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CashRegisterItem {
+    pub concept: String,
+    pub quantity: Option<u32>,
+    pub amount: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CashRegisterSummary {
+    pub total_income: f64,
+    pub total_expenses: f64,
+    pub total_to_balance: f64,
+    pub total_in_register: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Denomination {
+    pub value: f64,
+    pub quantity: u32,
+    pub total: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentMethodBalance {
+    pub method: String,
+    pub system_amount: f64,
+    pub actual_amount: f64,
+    pub difference: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinalBalance {
+    pub system_total: f64,
+    pub actual_total: f64,
+    pub difference: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum TemplateData {
     Invoice(InvoiceData),
     Report(ReportData),
     Receipt(ReceiptData),
+    CashRegister(CashRegisterData),
     Custom(HashMap<String, serde_json::Value>),
 }

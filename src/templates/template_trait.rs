@@ -52,6 +52,10 @@ impl TemplateRegistry {
         let quotation = Arc::new(QuotationTemplate::new());
         templates.insert(quotation.template_id().to_string(), quotation);
 
+        // Cuadre de Caja
+        let cash_register = Arc::new(CashRegisterTemplate::new());
+        templates.insert(cash_register.template_id().to_string(), cash_register);
+
         Self { templates }
     }
 

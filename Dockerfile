@@ -84,6 +84,9 @@ WORKDIR /app
 COPY --from=builder /app/target/release/api /app/api
 COPY --from=builder /app/target/release/kafka-worker /app/kafka-worker
 
+# Copy custom fonts for PDF generation
+COPY fonts/ /app/fonts/
+
 # Create non-root user
 RUN adduser -D -H -s /sbin/nologin appuser && \
     chown -R appuser:appuser /app
@@ -94,6 +97,7 @@ USER appuser
 ENV RUST_LOG=info
 ENV PDF_SERVER_HOST=0.0.0.0
 ENV PDF_SERVER_PORT=8080
+ENV PDF_FONTS_DIR=/app/fonts
 
 EXPOSE 8080
 

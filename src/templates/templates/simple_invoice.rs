@@ -40,7 +40,7 @@ impl TypstTemplate for SimpleInvoiceTemplate {
         let content = format!(
             r#"#set document(title: "Factura - {}", author: "{}")
 #set page(paper: "us-letter", margin: 2cm)
-#set text(font: "Arial", size: 11pt)
+#set text(font: "Inter", size: 11pt)
 
 // Encabezado
 #align(center)[

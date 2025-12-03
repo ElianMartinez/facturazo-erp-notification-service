@@ -230,7 +230,7 @@ impl TypstTemplate for QuotationTemplate {
 )
 
 #set text(
-  font: "Arial",
+  font: "Inter",
   size: 10pt,
 )
 

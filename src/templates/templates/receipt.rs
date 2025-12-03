@@ -37,7 +37,7 @@ impl TypstTemplate for ReceiptTemplate {
         let content = format!(
             r#"#set document(title: "Recibo #{}", author: "{}")
 #set page(paper: "a5", margin: 1.5cm)
-#set text(font: "Arial", size: 10pt)
+#set text(font: "Inter", size: 10pt)
 
 // Encabezado
 #align(center)[

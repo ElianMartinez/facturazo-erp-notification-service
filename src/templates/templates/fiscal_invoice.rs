@@ -80,7 +80,7 @@ impl FiscalInvoiceTemplate {
   paper: "us-letter",
   margin: (left: 20mm, right: 20mm, top: 20mm, bottom: 20mm)
 )
-#set text(font: "Helvetica", size: 10pt, lang: "es", fill: rgb(30, 30, 30))
+#set text(font: "Inter", size: 10pt, lang: "es", fill: rgb(30, 30, 30))
 #set align(left)
 
 // Marca de agua si está pagada
