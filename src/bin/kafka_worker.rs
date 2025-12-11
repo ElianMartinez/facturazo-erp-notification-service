@@ -19,12 +19,12 @@ use tokio::signal;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
-use pdf_services::api::state::AppConfig;
 use pdf_services::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use pdf_services::infrastructure::cache::CacheService;
 use pdf_services::infrastructure::generators::GeneratorFactory;
+use pdf_services::infrastructure::notifications::EmailService;
 use pdf_services::infrastructure::storage::StorageService;
-use pdf_services::kafka::handlers::{HandlerResponse, KafkaHandler, KafkaMessage};
+use pdf_services::kafka::handlers::{KafkaHandler, KafkaMessage};
 use std::path::PathBuf;
 
 /// Custom consumer context for logging rebalance events
@@ -106,17 +106,50 @@ async fn main() -> Result<()> {
         "documents".to_string(),
     ));
 
-    // Initialize orchestrators (no email/whatsapp for now)
+    // Initialize Email service if configured
+    let email_service = match (
+        env::var("SMTP_HOST").ok(),
+        env::var("SMTP_USER").ok(),
+        env::var("SMTP_PASS").ok(),
+    ) {
+        (Some(host), Some(user), Some(pass)) => {
+            let port = env::var("SMTP_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(587);
+            let from_email = env::var("SMTP_FROM_EMAIL")
+                .unwrap_or_else(|_| "noreply@example.com".to_string());
+            let from_name = env::var("SMTP_FROM_NAME")
+                .unwrap_or_else(|_| "PDF Service".to_string());
+
+            info!("Email service configured with host: {}", host);
+            Some(Arc::new(EmailService::new(
+                host,
+                port,
+                user,
+                pass,
+                from_email,
+                from_name,
+                true, // use TLS
+            )))
+        }
+        _ => {
+            warn!("Email service not configured - SMTP_HOST, SMTP_USER, SMTP_PASS required");
+            None
+        }
+    };
+
+    // Initialize orchestrators
     let document_orchestrator = Arc::new(DocumentOrchestrator::new(
         generator_factory.clone(),
         storage_service.clone(),
         cache_service.clone(),
-        None, // email service
+        email_service.clone(),
         None, // whatsapp service
     ));
 
     let notification_orchestrator = Arc::new(NotificationOrchestrator::new(
-        None, // email service
+        email_service,
         None, // whatsapp service
         cache_service.clone(),
     ));
