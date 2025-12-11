@@ -10,7 +10,7 @@ impl ReportTemplate {
         Self
     }
 
-    fn format_table_data(&self, data: &[HashMap<String, String>]) -> String {
+    fn format_table_data(&self, data: &[HashMap<String, serde_json::Value>]) -> String {
         if data.is_empty() {
             return String::new();
         }
@@ -36,8 +36,16 @@ impl ReportTemplate {
                 headers
                     .iter()
                     .map(|h| {
-                        let value = row.get(h).map(|v| v.as_str()).unwrap_or("-");
-                        format!("[{}]", utils::escape_typst(value))
+                        let value = row.get(h)
+                            .map(|v| match v {
+                                serde_json::Value::String(s) => s.clone(),
+                                serde_json::Value::Number(n) => n.to_string(),
+                                serde_json::Value::Bool(b) => b.to_string(),
+                                serde_json::Value::Null => "-".to_string(),
+                                _ => v.to_string(),
+                            })
+                            .unwrap_or_else(|| "-".to_string());
+                        format!("[{}]", utils::escape_typst(&value))
                     })
                     .collect::<Vec<_>>()
                     .join(", ")

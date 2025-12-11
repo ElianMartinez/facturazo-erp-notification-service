@@ -66,9 +66,42 @@ pub struct UserInfo {
     pub organization_id: Option<String>,
 }
 
-// Helper function to extract tenant and user info from request
+/// Extract tenant and user info from request.
+///
+/// This function checks multiple sources in order of priority:
+/// 1. Request extensions (set by auth middleware after JWT validation)
+/// 2. HTTP headers (X-Tenant-Id, X-User-Id) for internal service-to-service calls
+///
+/// Returns `Some((tenant_id, user_id))` if found, `None` if no auth info available.
 pub fn extract_tenant_user(req: &actix_web::HttpRequest) -> Option<(i64, i64)> {
-    req.extensions()
-        .get::<UserInfo>()
-        .map(|info| (info.tenant_id, info.user_id))
+    // First, try to get from extensions (set by auth middleware)
+    if let Some(info) = req.extensions().get::<UserInfo>() {
+        return Some((info.tenant_id, info.user_id));
+    }
+
+    // Fallback: try to get from headers (for internal service calls)
+    let tenant_id = req
+        .headers()
+        .get("X-Tenant-Id")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok());
+
+    let user_id = req
+        .headers()
+        .get("X-User-Id")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse::<i64>().ok());
+
+    match (tenant_id, user_id) {
+        (Some(t), Some(u)) => Some((t, u)),
+        _ => None,
+    }
+}
+
+/// Extract tenant and user info with defaults.
+///
+/// Same as `extract_tenant_user` but returns default values (1, 1) if no auth info found.
+/// Use this for endpoints that can work without authentication.
+pub fn extract_tenant_user_or_default(req: &actix_web::HttpRequest) -> (i64, i64) {
+    extract_tenant_user(req).unwrap_or((1, 1))
 }

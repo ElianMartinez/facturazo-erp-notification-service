@@ -20,7 +20,7 @@ impl FiscalInvoiceTemplate {
                     item.quantity,
                     item.unit.as_deref().unwrap_or("UND"),
                     item.unit_price,
-                    item.total
+                    item.get_total() // Use calculated total
                 )
             })
             .collect::<Vec<_>>()
@@ -30,17 +30,22 @@ impl FiscalInvoiceTemplate {
     fn generate_typst_content(&self, invoice: &InvoiceData) -> Result<String> {
         let company = &invoice.company_info;
         let client = &invoice.client_info;
-        let totals = &invoice.totals;
+        // Use get_totals() which calculates if not provided
+        let totals = invoice.get_totals();
 
         // Generar QR si hay información fiscal
         let qr_section = if let Some(fiscal) = &invoice.fiscal_info {
-            let qr_data = format!(
-                "https://dgii.gov.do/validacion?ncf={}&rnc={}&monto={:.2}&codigo={}",
-                fiscal.e_ncf, company.tax_id, totals.total, fiscal.security_code
-            );
+            let qr_data = if fiscal.qr_data.is_empty() {
+                format!(
+                    "https://dgii.gov.do/validacion?ncf={}&rnc={}&monto={:.2}&codigo={}",
+                    fiscal.e_ncf, company.tax_id, totals.total, fiscal.security_code
+                )
+            } else {
+                fiscal.qr_data.clone()
+            };
 
             // Generar QR (en producción, esto debería manejarse mejor)
-            let qr_path = format!("/tmp/qr_{}.png", fiscal.e_ncf);
+            let qr_path = format!("/tmp/qr_{}.png", fiscal.e_ncf.replace("/", "_"));
             utils::generate_qr_code(&qr_data, &qr_path)?;
 
             format!(
@@ -72,6 +77,9 @@ impl FiscalInvoiceTemplate {
 ]"#
             )
         };
+
+        // Get client tax_id with fallback
+        let client_tax_id = client.tax_id.as_deref().unwrap_or("N/A");
 
         // Construir el documento completo
         let content = format!(
@@ -192,12 +200,7 @@ impl FiscalInvoiceTemplate {
                 ""
             },
             // Iniciales de la empresa
-            company
-                .name
-                .chars()
-                .filter(|c| c.is_uppercase())
-                .take(2)
-                .collect::<String>(),
+            get_initials(&company.name),
             // Datos de la empresa
             utils::escape_typst(&company.name),
             utils::escape_typst(
@@ -208,10 +211,7 @@ impl FiscalInvoiceTemplate {
             ),
             "Principal", // branch no existe en el modelo actual
             company.tax_id,
-            utils::escape_typst(&format!(
-                "{}, {}, {}",
-                company.address.street, company.address.city, company.address.country
-            )),
+            utils::escape_typst(&company.address.to_string()),
             company.phone.as_deref().unwrap_or(""),
             utils::escape_typst(company.email.as_deref().unwrap_or("")),
             invoice.issue_date,
@@ -230,14 +230,11 @@ impl FiscalInvoiceTemplate {
             invoice.due_date,
             // Datos del cliente
             utils::escape_typst(&client.name),
-            client.tax_id,
+            client_tax_id,
             if let Some(address) = &client.address {
                 format!(
                     "#text(size: 9pt)[Dirección: {}] \\",
-                    utils::escape_typst(&format!(
-                        "{}, {}, {}",
-                        address.street, address.city, address.country
-                    ))
+                    utils::escape_typst(&address.to_string())
                 )
             } else {
                 String::new()
@@ -245,7 +242,7 @@ impl FiscalInvoiceTemplate {
             // Items de la factura
             self.format_items(&invoice.items),
             // Sección QR y totales
-            qr_section.replace("TOTALES_PLACEHOLDER", &self.format_totals(&invoice.totals)),
+            qr_section.replace("TOTALES_PLACEHOLDER", &self.format_totals(&totals)),
             // Notas
             if let Some(notes) = &invoice.notes {
                 format!(
@@ -285,6 +282,8 @@ impl FiscalInvoiceTemplate {
     }
 
     fn format_totals(&self, totals: &crate::templates::template_models::InvoiceTotals) -> String {
+        // Escape currency symbol to prevent Typst math mode issues
+        let currency = utils::escape_typst(&totals.currency);
         format!(
             r#"#rect(width: 100%, fill: rgb(245, 245, 245), stroke: 0.5pt + rgb(200, 200, 200), radius: 3pt)[
     #pad(10pt)[
@@ -305,15 +304,32 @@ impl FiscalInvoiceTemplate {
       )
     ]
   ]"#,
-            totals.currency,
+            currency,
             totals.subtotal,
-            totals.currency,
+            currency,
             totals.discount_amount.unwrap_or(0.0),
-            totals.currency,
+            currency,
             totals.tax_amount,
-            totals.currency,
+            currency,
             totals.total
         )
+    }
+}
+
+/// Get initials from a company name
+fn get_initials(name: &str) -> String {
+    // First try to get uppercase letters
+    let uppercase: String = name.chars().filter(|c| c.is_uppercase()).take(2).collect();
+
+    if uppercase.len() >= 2 {
+        uppercase
+    } else {
+        // Fallback: first letters of first two words
+        name.split_whitespace()
+            .take(2)
+            .filter_map(|word| word.chars().next())
+            .map(|c| c.to_uppercase().next().unwrap_or(c))
+            .collect()
     }
 }
 
@@ -321,7 +337,7 @@ impl TypstTemplate for FiscalInvoiceTemplate {
     fn generate(&self, data: &Value) -> Result<String> {
         // Deserializar los datos a InvoiceData
         let invoice: InvoiceData = serde_json::from_value(data.clone())
-            .context("Error deserializando datos de factura")?;
+            .context("Error deserializando datos de factura. Asegúrese de enviar los campos requeridos: invoice_number/invoiceNumber, issue_date/issueDate, due_date/dueDate, company_info/companyInfo, client_info/clientInfo, items")?;
 
         // Generar contenido Typst
         self.generate_typst_content(&invoice)
@@ -339,32 +355,97 @@ impl TypstTemplate for FiscalInvoiceTemplate {
 
         let obj = data.as_object().unwrap();
 
-        // Campos requeridos
-        let required = vec![
-            "invoice_number",
-            "issue_date",
-            "due_date",
-            "company_info",
-            "client_info",
-            "items",
-            "totals",
-        ];
+        // Check for required fields (both snake_case and camelCase variants)
+        let invoice_number_present = obj.contains_key("invoice_number")
+            || obj.contains_key("invoiceNumber")
+            || obj.contains_key("number");
+        let issue_date_present = obj.contains_key("issue_date")
+            || obj.contains_key("issueDate")
+            || obj.contains_key("date");
+        let due_date_present = obj.contains_key("due_date")
+            || obj.contains_key("dueDate");
+        let company_present = obj.contains_key("company_info")
+            || obj.contains_key("companyInfo")
+            || obj.contains_key("company");
+        let client_present = obj.contains_key("client_info")
+            || obj.contains_key("clientInfo")
+            || obj.contains_key("client")
+            || obj.contains_key("customer");
+        let items_present = obj.contains_key("items");
 
-        for field in required {
-            if !obj.contains_key(field) {
-                anyhow::bail!("Campo requerido faltante: {}", field);
+        if !invoice_number_present {
+            anyhow::bail!("Campo requerido faltante: invoice_number (o invoiceNumber, number)");
+        }
+        if !issue_date_present {
+            anyhow::bail!("Campo requerido faltante: issue_date (o issueDate, date)");
+        }
+        if !due_date_present {
+            anyhow::bail!("Campo requerido faltante: due_date (o dueDate)");
+        }
+        if !company_present {
+            anyhow::bail!("Campo requerido faltante: company_info (o companyInfo, company)");
+        }
+        if !client_present {
+            anyhow::bail!("Campo requerido faltante: client_info (o clientInfo, client, customer)");
+        }
+        if !items_present {
+            anyhow::bail!("Campo requerido faltante: items");
+        }
+
+        // Validate items is an array
+        if let Some(items) = obj.get("items") {
+            if !items.is_array() {
+                anyhow::bail!("El campo 'items' debe ser un array");
             }
         }
 
-        // Validar que items sea un array
-        if !obj["items"].is_array() {
-            anyhow::bail!("El campo 'items' debe ser un array");
-        }
+        // Note: 'totals' is now optional - will be calculated if not provided
 
         Ok(())
     }
 
     fn description(&self) -> &str {
         "Factura Fiscal Electrónica (República Dominicana)"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_initials() {
+        assert_eq!(get_initials("Facturazo ERP"), "FE");
+        assert_eq!(get_initials("ABC Company"), "AC");
+        assert_eq!(get_initials("test company"), "TC");
+        assert_eq!(get_initials("X"), "X");
+    }
+
+    #[test]
+    fn test_validate_snake_case() {
+        let template = FiscalInvoiceTemplate::new();
+        let data = serde_json::json!({
+            "invoice_number": "INV-001",
+            "issue_date": "2024-12-11",
+            "due_date": "2024-12-25",
+            "company_info": {"name": "Test", "tax_id": "123", "address": {"street": "x", "city": "y", "country": "DO"}},
+            "client_info": {"name": "Client"},
+            "items": []
+        });
+        assert!(template.validate(&data).is_ok());
+    }
+
+    #[test]
+    fn test_validate_camel_case() {
+        let template = FiscalInvoiceTemplate::new();
+        let data = serde_json::json!({
+            "invoiceNumber": "INV-001",
+            "issueDate": "2024-12-11",
+            "dueDate": "2024-12-25",
+            "companyInfo": {"name": "Test", "taxId": "123", "address": {"street": "x", "city": "y", "country": "DO"}},
+            "clientInfo": {"name": "Client"},
+            "items": []
+        });
+        assert!(template.validate(&data).is_ok());
     }
 }

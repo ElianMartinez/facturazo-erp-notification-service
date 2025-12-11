@@ -35,7 +35,9 @@ impl TypstTemplate for SimpleInvoiceTemplate {
 
         let company = &invoice.company_info;
         let client = &invoice.client_info;
-        let totals = &invoice.totals;
+        let totals = invoice.get_totals();
+        // Escape currency symbol to prevent Typst math mode issues
+        let currency = utils::escape_typst(&totals.currency);
 
         let content = format!(
             r#"#set document(title: "Factura - {}", author: "{}")
@@ -133,7 +135,7 @@ impl TypstTemplate for SimpleInvoiceTemplate {
             invoice.due_date,
             // Client info
             utils::escape_typst(&client.name),
-            client.tax_id,
+            client.tax_id.as_deref().unwrap_or("N/A"),
             if let Some(address) = &client.address {
                 format!(
                     "Dirección: {}",
@@ -145,11 +147,11 @@ impl TypstTemplate for SimpleInvoiceTemplate {
             // Items
             self.format_items(&invoice.items),
             // Totals
-            totals.currency,
+            currency,
             totals.subtotal,
-            totals.currency,
+            currency,
             totals.tax_amount,
-            totals.currency,
+            currency,
             totals.total,
             // Notes
             if let Some(notes) = &invoice.notes {

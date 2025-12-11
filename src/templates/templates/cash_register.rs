@@ -617,27 +617,28 @@ impl TypstTemplate for CashRegisterTemplate {
     }
 
     fn validate(&self, data: &Value) -> Result<()> {
-        // Validate required fields
+        // Validate required fields - accept both camelCase and snake_case
         let obj = data.as_object()
             .context("Los datos deben ser un objeto JSON")?;
 
+        // Pairs of (camelCase, snake_case) for required fields
         let required_fields = [
-            "documentCode",
-            "date",
-            "companyInfo",
-            "cashier",
-            "transactionsCount",
-            "status",
-            "income",
-            "expenses",
-            "summary",
-            "paymentMethods",
-            "finalBalance",
+            ("documentCode", "document_code"),
+            ("date", "date"),
+            ("companyInfo", "company_info"),
+            ("cashier", "cashier"),
+            ("transactionsCount", "transactions_count"),
+            ("status", "status"),
+            ("income", "income"),
+            ("expenses", "expenses"),
+            ("summary", "summary"),
+            ("paymentMethods", "payment_methods"),
+            ("finalBalance", "final_balance"),
         ];
 
-        for field in required_fields {
-            if !obj.contains_key(field) {
-                anyhow::bail!("Campo requerido faltante: {}", field);
+        for (camel, snake) in required_fields {
+            if !obj.contains_key(camel) && !obj.contains_key(snake) {
+                anyhow::bail!("Campo requerido faltante: {} / {}", camel, snake);
             }
         }
 

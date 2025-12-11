@@ -15,6 +15,8 @@ use crate::models::{
     DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, NotificationConfig, Priority,
 };
 
+use crate::api::middleware::auth::{extract_tenant_user, extract_tenant_user_or_default};
+
 /// Generate document synchronously (small documents only)
 pub async fn generate_sync(
     req: HttpRequest,
@@ -22,8 +24,7 @@ pub async fn generate_sync(
     state: web::Data<ApiState>,
 ) -> ApiResult<HttpResponse> {
     // Extract tenant and user info
-    let (tenant_id, user_id) =
-        crate::api::middleware::auth::extract_tenant_user(&req).unwrap_or((1, 1));
+    let (tenant_id, user_id) = extract_tenant_user_or_default(&req);
 
     // Update metadata with tenant and user info
     data.metadata.tenant_id = tenant_id;
@@ -97,7 +98,7 @@ pub async fn generate_async(
     mut data: web::Json<DocumentRequest>,
     state: web::Data<ApiState>,
 ) -> ApiResult<HttpResponse> {
-    let (tenant_id, user_id) = extract_tenant_user(&req);
+    let (tenant_id, user_id) = extract_tenant_user_or_default(&req);
 
     // Update metadata with tenant and user info
     data.metadata.tenant_id = tenant_id;
@@ -144,7 +145,7 @@ pub async fn upload_data(
 ) -> ApiResult<HttpResponse> {
     use futures::StreamExt;
 
-    let (_tenant_id, user_id) = crate::api::middleware::auth::extract_tenant_user(&req)
+    let (_tenant_id, user_id) = extract_tenant_user(&req)
         .ok_or_else(|| actix_web::error::ErrorUnauthorized("No auth info"))?;
 
     // Check rate limit
@@ -229,7 +230,7 @@ pub async fn download_document(
     state: web::Data<ApiState>,
 ) -> ApiResult<HttpResponse> {
     let document_id = path.into_inner();
-    let (_tenant_id, _user_id) = extract_tenant_user(&req);
+    let (_tenant_id, _user_id) = extract_tenant_user_or_default(&req);
 
     // For now, construct the S3 key directly
     let key = format!("documents/{}.pdf", document_id);
@@ -327,29 +328,7 @@ async fn generate_report_sync(
         .ok_or_else(|| anyhow::anyhow!("No storage URL returned"))
 }
 
-pub fn extract_tenant_user(req: &HttpRequest) -> (i64, i64) {
-    // Try to get from headers or extensions (set by auth middleware)
-    let tenant_id = req
-        .headers()
-        .get("X-Tenant-Id")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or(0);
-
-    let user_id = req
-        .headers()
-        .get("X-User-Id")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.parse::<i64>().ok())
-        .unwrap_or(0);
-
-    // Alternative: get from request extensions if set by auth middleware
-    if let Some(auth_info) = req.extensions().get::<AuthInfo>() {
-        return (auth_info.tenant_id, auth_info.user_id);
-    }
-
-    (tenant_id, user_id)
-}
+// NOTE: extract_tenant_user moved to middleware/auth.rs for centralization
 
 #[derive(Clone, Debug)]
 pub struct AuthInfo {
@@ -368,11 +347,6 @@ fn estimate_processing_time(request: &DocumentRequest) -> u64 {
 }
 
 // Database helper functions removed - would use cache/S3 in production
-
-async fn extract_tenant_user_ids(_req: &HttpRequest) -> (i64, i64) {
-    // Mock implementation for now
-    (1, 1)
-}
 
 // Process document asynchronously using orchestrator
 async fn process_document_async(
