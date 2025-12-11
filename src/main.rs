@@ -1,13 +1,60 @@
-// use actix_cors::Cors;
+//! PDF Services - Combined HTTP API + Kafka Worker
+//!
+//! This is the main entry point that runs both:
+//! - HTTP API server for synchronous document generation
+//! - Kafka worker for asynchronous message processing
+
 use actix_web::{middleware, web, App, HttpServer};
 use anyhow::Result;
 use pdf_services::api::state::AppConfig;
 use pdf_services::api::{configure_routes, ApiState};
+use pdf_services::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
+use pdf_services::infrastructure::cache::CacheService;
+use pdf_services::infrastructure::generators::GeneratorFactory;
+use pdf_services::infrastructure::notifications::EmailService;
+use pdf_services::infrastructure::storage::StorageService;
+use pdf_services::kafka::handlers::{KafkaHandler, KafkaMessage};
 use prometheus::Registry;
+use rdkafka::client::ClientContext;
+use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
+use rdkafka::consumer::stream_consumer::StreamConsumer;
+use rdkafka::consumer::{CommitMode, Consumer, ConsumerContext, Rebalance};
+use rdkafka::error::KafkaResult;
+use rdkafka::message::{Headers, Message};
+use rdkafka::producer::{FutureProducer, FutureRecord};
+use rdkafka::TopicPartitionList;
 use std::env;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::broadcast;
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-#[actix_web::main]
+/// Custom consumer context for logging rebalance events
+struct CustomContext;
+
+impl ClientContext for CustomContext {}
+
+impl ConsumerContext for CustomContext {
+    fn pre_rebalance(&self, rebalance: &Rebalance) {
+        info!("Kafka pre rebalance: {:?}", rebalance);
+    }
+
+    fn post_rebalance(&self, rebalance: &Rebalance) {
+        info!("Kafka post rebalance: {:?}", rebalance);
+    }
+
+    fn commit_callback(&self, result: KafkaResult<()>, _offsets: &TopicPartitionList) {
+        if let Err(e) = result {
+            warn!("Kafka commit callback error: {}", e);
+        }
+    }
+}
+
+type LoggingConsumer = StreamConsumer<CustomContext>;
+
+#[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables
     dotenv::dotenv().ok();
@@ -19,19 +66,24 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    tracing::info!("Starting Document Generator API");
+    info!("Starting PDF Services (HTTP + Kafka)");
 
     // Initialize Prometheus metrics
     let _prometheus = Registry::new();
-    // Comentado temporalmente - requiere feature "process" y OS Linux
-    // prometheus::default_registry().register(Box::new(
-    //     prometheus::process_collector::ProcessCollector::for_self(),
-    // ))?;
 
     // Load configuration
     let config = load_config()?;
 
-    // Initialize application state
+    // Check if Kafka is enabled
+    let kafka_enabled = env::var("KAFKA_ENABLED")
+        .unwrap_or_else(|_| "true".to_string())
+        .parse::<bool>()
+        .unwrap_or(true);
+
+    // Shared shutdown signal
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+
+    // Initialize application state for HTTP server
     let state = web::Data::new(ApiState::new(config).await?);
 
     // Get server settings
@@ -40,20 +92,297 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| "8080".to_string())
         .parse::<u16>()?;
 
-    tracing::info!("Starting server on {}:{}", host, port);
+    info!("HTTP server will run on {}:{}", host, port);
 
-    // Start HTTP server
-    HttpServer::new(move || {
-        App::new()
-            .app_data(state.clone())
-            .wrap(middleware::Logger::default())
-            .wrap(middleware::NormalizePath::trim())
-            .configure(configure_routes)
-    })
-    .bind((host.as_str(), port))?
-    .run()
-    .await?;
+    // Spawn HTTP server
+    let http_handle = {
+        let state = state.clone();
+        let host = host.clone();
+        tokio::spawn(async move {
+            info!("Starting HTTP server on {}:{}", host, port);
+            HttpServer::new(move || {
+                App::new()
+                    .app_data(state.clone())
+                    .wrap(middleware::Logger::default())
+                    .wrap(middleware::NormalizePath::trim())
+                    .configure(configure_routes)
+            })
+            .bind((host.as_str(), port))
+            .expect("Failed to bind HTTP server")
+            .run()
+            .await
+            .expect("HTTP server error");
+        })
+    };
 
+    // Spawn Kafka worker if enabled
+    let kafka_handle = if kafka_enabled {
+        let mut shutdown_rx = shutdown_tx.subscribe();
+        Some(tokio::spawn(async move {
+            if let Err(e) = run_kafka_worker(&mut shutdown_rx).await {
+                error!("Kafka worker error: {}", e);
+            }
+        }))
+    } else {
+        info!("Kafka worker disabled (KAFKA_ENABLED=false)");
+        None
+    };
+
+    // Wait for shutdown signal
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            info!("Received shutdown signal (Ctrl+C)");
+            let _ = shutdown_tx.send(());
+        }
+        result = http_handle => {
+            match result {
+                Ok(_) => info!("HTTP server stopped"),
+                Err(e) => error!("HTTP server task error: {}", e),
+            }
+        }
+        result = async {
+            if let Some(handle) = kafka_handle {
+                handle.await
+            } else {
+                // If kafka is disabled, just wait forever
+                std::future::pending::<Result<(), tokio::task::JoinError>>().await
+            }
+        } => {
+            match result {
+                Ok(_) => info!("Kafka worker stopped"),
+                Err(e) => error!("Kafka worker task error: {}", e),
+            }
+        }
+    }
+
+    info!("PDF Services shutdown complete");
+    Ok(())
+}
+
+/// Run the Kafka consumer/producer worker
+async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<()> {
+    let brokers = env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
+    let group_id =
+        env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| "pdf-service-worker".to_string());
+    let topics_str = env::var("KAFKA_TOPICS")
+        .unwrap_or_else(|_| "document-generate-request,notification-dispatch-request".to_string());
+    let topics: Vec<&str> = topics_str.split(',').collect();
+    let response_topic =
+        env::var("KAFKA_RESPONSE_TOPIC").unwrap_or_else(|_| "document-events".to_string());
+
+    info!("Kafka worker connecting to brokers: {}", brokers);
+    info!("Kafka consumer group: {}", group_id);
+    info!("Kafka subscribing to topics: {:?}", topics);
+
+    // Create Kafka consumer
+    let consumer: LoggingConsumer = ClientConfig::new()
+        .set("group.id", &group_id)
+        .set("bootstrap.servers", &brokers)
+        .set("enable.partition.eof", "false")
+        .set("session.timeout.ms", "6000")
+        .set("enable.auto.commit", "false")
+        .set("auto.offset.reset", "earliest")
+        .set_log_level(RDKafkaLogLevel::Debug)
+        .create_with_context(CustomContext)?;
+
+    consumer.subscribe(&topics)?;
+
+    // Create Kafka producer for responses
+    let producer: FutureProducer = ClientConfig::new()
+        .set("bootstrap.servers", &brokers)
+        .set("message.timeout.ms", "5000")
+        .create()?;
+
+    // Initialize services for Kafka worker
+    let work_dir = PathBuf::from("./work");
+    let generator_factory = Arc::new(GeneratorFactory::new(work_dir.clone()));
+    let cache_service = Arc::new(CacheService::new());
+    let storage_service = Arc::new(StorageService::new(
+        PathBuf::from("./storage"),
+        "documents".to_string(),
+    ));
+
+    // Initialize Email service if configured
+    let email_service = match (
+        env::var("SMTP_HOST").ok(),
+        env::var("SMTP_USER").ok(),
+        env::var("SMTP_PASS").ok(),
+    ) {
+        (Some(host), Some(user), Some(pass)) => {
+            let port = env::var("SMTP_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(587);
+            let from_email = env::var("SMTP_FROM_EMAIL")
+                .unwrap_or_else(|_| "noreply@example.com".to_string());
+            let from_name = env::var("SMTP_FROM_NAME")
+                .unwrap_or_else(|_| "PDF Service".to_string());
+
+            info!("Kafka worker: Email service configured with host: {}", host);
+            Some(Arc::new(EmailService::new(
+                host,
+                port,
+                user,
+                pass,
+                from_email,
+                from_name,
+                true, // use TLS
+            )))
+        }
+        _ => {
+            warn!("Kafka worker: Email service not configured - SMTP_HOST, SMTP_USER, SMTP_PASS required");
+            None
+        }
+    };
+
+    // Initialize orchestrators
+    let document_orchestrator = Arc::new(DocumentOrchestrator::new(
+        generator_factory.clone(),
+        storage_service.clone(),
+        cache_service.clone(),
+        email_service.clone(),
+        None, // whatsapp service
+    ));
+
+    let notification_orchestrator = Arc::new(NotificationOrchestrator::new(
+        email_service,
+        None, // whatsapp service
+        cache_service.clone(),
+    ));
+
+    // Create handler
+    let handler = Arc::new(KafkaHandler::new(
+        document_orchestrator,
+        notification_orchestrator,
+    ));
+
+    info!("Kafka worker started - waiting for messages...");
+
+    // Message processing loop
+    loop {
+        tokio::select! {
+            _ = shutdown_rx.recv() => {
+                info!("Kafka worker received shutdown signal");
+                break;
+            }
+            message = consumer.recv() => {
+                match message {
+                    Ok(msg) => {
+                        let payload = match msg.payload_view::<str>() {
+                            None => {
+                                warn!("Empty Kafka message received");
+                                continue;
+                            }
+                            Some(Ok(s)) => s,
+                            Some(Err(e)) => {
+                                error!("Error deserializing Kafka message payload: {:?}", e);
+                                continue;
+                            }
+                        };
+
+                        // Extract correlation ID from headers if present
+                        let correlation_id = msg.headers()
+                            .and_then(|h| {
+                                for i in 0..h.count() {
+                                    let header = h.get(i);
+                                    if header.key == "correlation_id" {
+                                        return header.value.and_then(|v| std::str::from_utf8(v).ok());
+                                    }
+                                }
+                                None
+                            })
+                            .map(|s| s.to_string());
+
+                        info!(
+                            "Kafka message received - topic: {}, partition: {}, offset: {}, correlation_id: {:?}",
+                            msg.topic(),
+                            msg.partition(),
+                            msg.offset(),
+                            correlation_id
+                        );
+
+                        // Parse and process message
+                        match serde_json::from_str::<KafkaMessage>(payload) {
+                            Ok(kafka_msg) => {
+                                let handler_clone = handler.clone();
+                                let producer_clone = producer.clone();
+                                let response_topic_clone = response_topic.clone();
+                                let correlation_id_clone = correlation_id.clone();
+
+                                // Process message
+                                match handler_clone.handle(kafka_msg).await {
+                                    Ok(response) => {
+                                        info!("Kafka message processed successfully");
+
+                                        // Send response to response topic
+                                        if let Ok(response_json) = serde_json::to_string(&response) {
+                                            if let Some(ref cid) = correlation_id_clone {
+                                                let headers = rdkafka::message::OwnedHeaders::new()
+                                                    .insert(rdkafka::message::Header {
+                                                        key: "correlation_id",
+                                                        value: Some(cid.as_str()),
+                                                    });
+
+                                                let record_with_headers = FutureRecord::to(&response_topic_clone)
+                                                    .payload(&response_json)
+                                                    .key(cid.as_str())
+                                                    .headers(headers);
+
+                                                match producer_clone.send(record_with_headers, Duration::from_secs(5)).await {
+                                                    Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
+                                                    Err((e, _)) => error!("Failed to send response: {}", e),
+                                                }
+                                            } else {
+                                                let record = FutureRecord::<str, str>::to(&response_topic_clone)
+                                                    .payload(&response_json);
+
+                                                match producer_clone.send(record, Duration::from_secs(5)).await {
+                                                    Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
+                                                    Err((e, _)) => error!("Failed to send response: {}", e),
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("Error processing Kafka message: {}", e);
+
+                                        // Send error response
+                                        let error_response = serde_json::json!({
+                                            "type": "error",
+                                            "error": e.to_string(),
+                                            "correlation_id": correlation_id
+                                        });
+
+                                        if let Ok(error_json) = serde_json::to_string(&error_response) {
+                                            let key = correlation_id.clone().unwrap_or_default();
+                                            let record = FutureRecord::to(&response_topic_clone)
+                                                .payload(&error_json)
+                                                .key(&key);
+
+                                            let _ = producer_clone.send(record, Duration::from_secs(5)).await;
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to parse Kafka message: {} - Payload: {}", e, payload);
+                            }
+                        }
+
+                        // Commit offset
+                        if let Err(e) = consumer.commit_message(&msg, CommitMode::Async) {
+                            error!("Failed to commit Kafka offset: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        error!("Kafka consumer error: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    info!("Kafka worker stopped");
     Ok(())
 }
 

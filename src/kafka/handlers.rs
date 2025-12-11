@@ -55,6 +55,8 @@ pub struct SendNotificationRequest {
     pub recipient: String,
     pub subject: Option<String>,
     pub message: String,
+    /// Optional HTML body for email notifications
+    pub html_body: Option<String>,
     pub document_id: Option<String>,
     pub callback_url: Option<String>,
 }
@@ -190,15 +192,24 @@ impl KafkaHandler {
     ) -> Result<HandlerResponse> {
         info!("Handling SendNotification: {}", req.request_id);
 
+        // Build template_vars with body and optional html_body
+        let mut template_vars = serde_json::json!({
+            "message": req.message,
+            "body": req.message
+        });
+
+        // Add html_body if provided
+        if let Some(html) = &req.html_body {
+            template_vars["html_body"] = serde_json::Value::String(html.clone());
+        }
+
         let command = SendNotificationCommand {
             tenant_id: req.tenant_id.clone(),
             channel: parse_channel(&req.channel),
             recipient: req.recipient,
             subject: req.subject,
             template_id: None,
-            template_vars: serde_json::json!({
-                "message": req.message
-            }),
+            template_vars,
             priority: crate::domain::notification::NotificationPriority::Normal,
             document_id: req.document_id,
             attachments: vec![],
@@ -324,6 +335,7 @@ impl KafkaHandler {
                             recipient: recipient.clone(),
                             subject: req.subject.clone(),
                             message: req.message.clone(),
+                            html_body: None,
                             document_id: req.document_id.clone(),
                             callback_url: None,
                         };
@@ -359,6 +371,7 @@ impl KafkaHandler {
                     recipient: recipient.clone(),
                     subject: req.subject.clone(),
                     message: req.message.clone(),
+                    html_body: None,
                     document_id: req.document_id.clone(),
                     callback_url: None,
                 };

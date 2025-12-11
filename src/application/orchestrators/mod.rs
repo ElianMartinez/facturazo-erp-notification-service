@@ -218,6 +218,13 @@ impl NotificationOrchestrator {
                 .to_string()
         };
 
+        // Get HTML body if provided
+        let html_body = command
+            .template_vars
+            .get("html_body")
+            .and_then(|b| b.as_str())
+            .map(|s| s.to_string());
+
         let subject = command
             .subject
             .clone()
@@ -240,8 +247,15 @@ impl NotificationOrchestrator {
             vec![]
         };
 
+        // Use send_email with HTML support
         email_service
-            .send_with_attachments(&command.recipient, &subject, &body, attachments)
+            .send_email(
+                &command.recipient,
+                &subject,
+                &body,
+                html_body.as_deref(),
+                attachments,
+            )
             .await?;
 
         Ok(NotificationResult {
