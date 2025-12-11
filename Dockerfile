@@ -1,7 +1,7 @@
 # ===========================================
 # Stage 1: Chef - Prepare recipe (Alpine)
 # ===========================================
-FROM rust:1.86-alpine AS chef
+FROM rust:1.83-alpine AS chef
 RUN apk add --no-cache musl-dev
 RUN cargo install cargo-chef
 WORKDIR /app
@@ -33,12 +33,14 @@ RUN apk add --no-cache \
     git \
     zlib-dev \
     zlib-static \
+    perl \
     python3
 
 WORKDIR /app
 
 # Configure cargo for better network reliability and dynamic linking
 ENV CARGO_NET_RETRY=10
+ENV CARGO_NET_GIT_FETCH_WITH_CLI=true
 ENV RUSTFLAGS="-C target-feature=-crt-static"
 
 # Copy recipe and build dependencies (cached layer)
@@ -47,7 +49,12 @@ RUN cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build application
 COPY . .
-RUN cargo build --release --bin api --bin kafka-worker
+
+# Build only the api binary (includes both HTTP + Kafka worker)
+RUN cargo build --release --bin api
+
+# Strip binary for smaller size
+RUN strip target/release/api
 
 # ===========================================
 # Stage 4: Runtime (minimal Alpine)
@@ -61,16 +68,17 @@ RUN apk add --no-cache \
     librdkafka \
     libsasl \
     libgcc \
-    xz
+    xz \
+    curl
 
 # Install Typst from GitHub releases
 ARG TYPST_VERSION=0.12.0
 ARG TARGETARCH
 RUN cd /tmp && \
     if [ "$TARGETARCH" = "arm64" ]; then \
-        ARCH="aarch64"; \
+    ARCH="aarch64"; \
     else \
-        ARCH="x86_64"; \
+    ARCH="x86_64"; \
     fi && \
     wget -q https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${ARCH}-unknown-linux-musl.tar.xz && \
     tar -xf typst-${ARCH}-unknown-linux-musl.tar.xz && \
@@ -80,14 +88,16 @@ RUN cd /tmp && \
 
 WORKDIR /app
 
-# Copy binaries from builder
-COPY --from=builder /app/target/release/api /app/api
-COPY --from=builder /app/target/release/kafka-worker /app/kafka-worker
+# Copy binary from builder
+COPY --from=builder /app/target/release/api /app/pdf-service
 
 # Copy custom fonts for PDF generation
 COPY fonts/ /app/fonts/
 
-# Create non-root user
+# Create necessary directories
+RUN mkdir -p /app/work /app/storage /app/data
+
+# Create non-root user and set permissions
 RUN adduser -D -H -s /sbin/nologin appuser && \
     chown -R appuser:appuser /app
 
@@ -95,11 +105,18 @@ USER appuser
 
 # Default environment variables
 ENV RUST_LOG=info
-ENV PDF_SERVER_HOST=0.0.0.0
-ENV PDF_SERVER_PORT=8080
+ENV HOST=0.0.0.0
+ENV PORT=8080
 ENV PDF_FONTS_DIR=/app/fonts
+
+# Kafka defaults (can be overridden)
+ENV KAFKA_ENABLED=true
+ENV KAFKA_BROKERS=kafka:9092
+ENV KAFKA_GROUP_ID=pdf-service-worker
+ENV KAFKA_TOPICS=document-generate-request,notification-dispatch-request
+ENV KAFKA_RESPONSE_TOPIC=document-events
 
 EXPOSE 8080
 
-# Default command (can be overridden)
-CMD ["./api"]
+# Run the combined HTTP + Kafka service
+CMD ["./pdf-service"]
