@@ -1,3 +1,6 @@
 /target
 .claude
 .env
+# Generated files
+storage/
+temp_*.typ
