@@ -57,13 +57,15 @@ jobs:
 
       - name: Install Typst
         run: |
-          if ! command -v typst &> /dev/null; then
-            echo "Installing Typst..."
-            curl -fsSL https://typst.community/typst-install/install.sh | sh
-            echo "$HOME/.local/bin" >> $GITHUB_PATH
-          else
-            echo "Typst already installed: $(typst --version)"
+          TYPST_VERSION="v0.12.0"
+          if ! command -v /usr/local/bin/typst &> /dev/null; then
+            echo "Installing Typst ${TYPST_VERSION}..."
+            curl -fsSL "https://github.com/typst/typst/releases/download/${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" -o typst.tar.xz
+            tar -xf typst.tar.xz
+            sudo mv typst-x86_64-unknown-linux-musl/typst /usr/local/bin/
+            rm -rf typst.tar.xz typst-x86_64-unknown-linux-musl
           fi
+          /usr/local/bin/typst --version
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -79,7 +81,6 @@ jobs:
       - name: Run tests
         run: |
           source $HOME/.cargo/env
-          export PATH="$HOME/.local/bin:$PATH"
           typst --version
           cargo test --all-targets -- --test-threads=4
         timeout-minutes: 10
