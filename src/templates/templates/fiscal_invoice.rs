@@ -318,19 +318,12 @@ impl FiscalInvoiceTemplate {
 
 /// Get initials from a company name
 fn get_initials(name: &str) -> String {
-    // First try to get uppercase letters
-    let uppercase: String = name.chars().filter(|c| c.is_uppercase()).take(2).collect();
-
-    if uppercase.len() >= 2 {
-        uppercase
-    } else {
-        // Fallback: first letters of first two words
-        name.split_whitespace()
-            .take(2)
-            .filter_map(|word| word.chars().next())
-            .map(|c| c.to_uppercase().next().unwrap_or(c))
-            .collect()
-    }
+    // Get first letter of first two words
+    name.split_whitespace()
+        .take(2)
+        .filter_map(|word| word.chars().next())
+        .map(|c| c.to_uppercase().next().unwrap_or(c))
+        .collect()
 }
 
 impl TypstTemplate for FiscalInvoiceTemplate {
