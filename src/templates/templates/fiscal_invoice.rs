@@ -362,8 +362,7 @@ impl TypstTemplate for FiscalInvoiceTemplate {
         let issue_date_present = obj.contains_key("issue_date")
             || obj.contains_key("issueDate")
             || obj.contains_key("date");
-        let due_date_present = obj.contains_key("due_date")
-            || obj.contains_key("dueDate");
+        let due_date_present = obj.contains_key("due_date") || obj.contains_key("dueDate");
         let company_present = obj.contains_key("company_info")
             || obj.contains_key("companyInfo")
             || obj.contains_key("company");

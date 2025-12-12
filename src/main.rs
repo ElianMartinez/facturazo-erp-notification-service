@@ -163,8 +163,7 @@ async fn main() -> Result<()> {
 /// Run the Kafka consumer/producer worker
 async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<()> {
     let brokers = env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
-    let group_id =
-        env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| "pdf-service-worker".to_string());
+    let group_id = env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| "pdf-service-worker".to_string());
 
     // Topic naming follows ERP Core convention: {env}.facturazo.ERP.{domain}.{event}
     // Topics are created by ERP Core on startup - pdf-services only consumes
@@ -226,20 +225,14 @@ async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<(
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(587);
-            let from_email = env::var("SMTP_FROM_EMAIL")
-                .unwrap_or_else(|_| "noreply@example.com".to_string());
-            let from_name = env::var("SMTP_FROM_NAME")
-                .unwrap_or_else(|_| "PDF Service".to_string());
+            let from_email =
+                env::var("SMTP_FROM_EMAIL").unwrap_or_else(|_| "noreply@example.com".to_string());
+            let from_name =
+                env::var("SMTP_FROM_NAME").unwrap_or_else(|_| "PDF Service".to_string());
 
             info!("Kafka worker: Email service configured with host: {}", host);
             Some(Arc::new(EmailService::new(
-                host,
-                port,
-                user,
-                pass,
-                from_email,
-                from_name,
-                true, // use TLS
+                host, port, user, pass, from_email, from_name, true, // use TLS
             )))
         }
         _ => {

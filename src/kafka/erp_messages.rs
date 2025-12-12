@@ -160,14 +160,16 @@ impl ErpIntegrationEvent {
             })),
 
             "batch_notify" => {
-                let recipients = self.recipients.ok_or_else(|| {
-                    anyhow::anyhow!("batch_notify requires recipients list")
-                })?;
+                let recipients = self
+                    .recipients
+                    .ok_or_else(|| anyhow::anyhow!("batch_notify requires recipients list"))?;
 
                 Ok(KafkaMessage::BatchNotify(BatchNotifyRequest {
                     request_id: self.request_id,
                     tenant_id: tenant_id_str,
-                    batch_id: self.batch_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                    batch_id: self
+                        .batch_id
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                     channel: self.channel.unwrap_or_else(|| "email".to_string()),
                     recipients,
                     subject: self.subject,
@@ -287,6 +289,9 @@ mod tests {
         let result = event.into_kafka_message();
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown ERP message type"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown ERP message type"));
     }
 }

@@ -22,7 +22,12 @@ pub struct InvoiceData {
     pub company_info: CompanyInfo,
 
     /// Client info - accepts: client_info, clientInfo, client, customer
-    #[serde(alias = "client_info", alias = "clientInfo", alias = "client", alias = "customer")]
+    #[serde(
+        alias = "client_info",
+        alias = "clientInfo",
+        alias = "client",
+        alias = "customer"
+    )]
     pub client_info: ClientInfo,
 
     /// Invoice items
@@ -96,7 +101,9 @@ impl InvoiceData {
 
     /// Get totals - returns calculated if not set
     pub fn get_totals(&self) -> InvoiceTotals {
-        self.totals.clone().unwrap_or_else(|| self.calculate_totals())
+        self.totals
+            .clone()
+            .unwrap_or_else(|| self.calculate_totals())
     }
 }
 
@@ -120,7 +127,12 @@ pub struct CompanyInfo {
     pub email: Option<String>,
     pub website: Option<String>,
 
-    #[serde(alias = "logo_path", alias = "logoPath", alias = "logo_url", alias = "logoUrl")]
+    #[serde(
+        alias = "logo_path",
+        alias = "logoPath",
+        alias = "logo_url",
+        alias = "logoUrl"
+    )]
     pub logo_path: Option<String>,
 }
 
@@ -133,7 +145,13 @@ pub struct ClientInfo {
     pub legal_name: Option<String>,
 
     /// Tax ID - accepts: tax_id, taxId, rnc, document_number, documentNumber
-    #[serde(alias = "tax_id", alias = "taxId", alias = "rnc", alias = "document_number", alias = "documentNumber")]
+    #[serde(
+        alias = "tax_id",
+        alias = "taxId",
+        alias = "rnc",
+        alias = "document_number",
+        alias = "documentNumber"
+    )]
     pub tax_id: Option<String>,
 
     /// Address - optional, can be object or string
@@ -302,7 +320,8 @@ pub struct InvoiceItem {
 impl InvoiceItem {
     /// Get the subtotal for this item
     pub fn get_subtotal(&self) -> f64 {
-        self.subtotal.unwrap_or_else(|| self.quantity * self.unit_price)
+        self.subtotal
+            .unwrap_or_else(|| self.quantity * self.unit_price)
     }
 
     /// Get the total for this item (including tax, minus discount)
@@ -331,11 +350,22 @@ pub struct InvoiceTotals {
     pub subtotal: f64,
 
     /// Tax amount - accepts: tax_amount, taxAmount, itbis, tax_total, taxTotal
-    #[serde(alias = "tax_amount", alias = "taxAmount", alias = "itbis", alias = "tax_total", alias = "taxTotal")]
+    #[serde(
+        alias = "tax_amount",
+        alias = "taxAmount",
+        alias = "itbis",
+        alias = "tax_total",
+        alias = "taxTotal"
+    )]
     pub tax_amount: f64,
 
     /// Discount - accepts: discount_amount, discountAmount, discount_total, discountTotal
-    #[serde(alias = "discount_amount", alias = "discountAmount", alias = "discount_total", alias = "discountTotal")]
+    #[serde(
+        alias = "discount_amount",
+        alias = "discountAmount",
+        alias = "discount_total",
+        alias = "discountTotal"
+    )]
     pub discount_amount: Option<f64>,
 
     /// Grand total - accepts: total, grand_total, grandTotal
@@ -354,7 +384,13 @@ pub struct InvoiceTotals {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FiscalInfo {
     /// Electronic NCF - accepts: e_ncf, eNcf, ncf, ncf_number, ncfNumber
-    #[serde(alias = "e_ncf", alias = "eNcf", alias = "ncf", alias = "ncf_number", alias = "ncfNumber")]
+    #[serde(
+        alias = "e_ncf",
+        alias = "eNcf",
+        alias = "ncf",
+        alias = "ncf_number",
+        alias = "ncfNumber"
+    )]
     pub e_ncf: String,
 
     /// Security code - accepts: security_code, securityCode
@@ -366,7 +402,13 @@ pub struct FiscalInfo {
     pub signature_date: String,
 
     /// QR code data - accepts: qr_data, qrData, qr_url, qrUrl
-    #[serde(alias = "qr_data", alias = "qrData", alias = "qr_url", alias = "qrUrl", default)]
+    #[serde(
+        alias = "qr_data",
+        alias = "qrData",
+        alias = "qr_url",
+        alias = "qrUrl",
+        default
+    )]
     pub qr_data: String,
 
     /// Expiration date - accepts: expiration_date, expirationDate
@@ -760,20 +802,18 @@ mod tests {
                 phone: None,
                 email: None,
             },
-            items: vec![
-                InvoiceItem {
-                    code: None,
-                    description: "Item 1".to_string(),
-                    quantity: 2.0,
-                    unit: None,
-                    unit_price: 100.0,
-                    tax_rate: Some(18.0),
-                    tax_amount: None,
-                    discount: None,
-                    subtotal: None,
-                    total: None,
-                }
-            ],
+            items: vec![InvoiceItem {
+                code: None,
+                description: "Item 1".to_string(),
+                quantity: 2.0,
+                unit: None,
+                unit_price: 100.0,
+                tax_rate: Some(18.0),
+                tax_amount: None,
+                discount: None,
+                subtotal: None,
+                total: None,
+            }],
             totals: None,
             fiscal_info: None,
             payment_info: None,

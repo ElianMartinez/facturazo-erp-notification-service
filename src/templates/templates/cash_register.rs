@@ -207,9 +207,21 @@ impl CashRegisterTemplate {
 
         // Final balance colors
         let (balance_color, balance_label) = if data.final_balance.difference > 0.0 {
-            ("4ADE80", format!("SOBRANTE DE {}", Self::format_currency(data.final_balance.difference)))
+            (
+                "4ADE80",
+                format!(
+                    "SOBRANTE DE {}",
+                    Self::format_currency(data.final_balance.difference)
+                ),
+            )
         } else if data.final_balance.difference < 0.0 {
-            ("F87171", format!("FALTANTE DE {}", Self::format_currency(data.final_balance.difference.abs())))
+            (
+                "F87171",
+                format!(
+                    "FALTANTE DE {}",
+                    Self::format_currency(data.final_balance.difference.abs())
+                ),
+            )
         } else {
             ("94A3B8", "CUADRADO".to_string())
         };
@@ -592,8 +604,20 @@ impl CashRegisterTemplate {
             Self::format_currency(data.final_balance.difference),
             Self::format_currency(data.final_balance.system_total),
             Self::format_currency(data.final_balance.actual_total),
-            if data.final_balance.difference > 0.0 { "ECFDF5" } else if data.final_balance.difference < 0.0 { "FEF2F2" } else { "F1F5F9" },
-            if data.final_balance.difference > 0.0 { "059669" } else if data.final_balance.difference < 0.0 { "DC2626" } else { "64748B" },
+            if data.final_balance.difference > 0.0 {
+                "ECFDF5"
+            } else if data.final_balance.difference < 0.0 {
+                "FEF2F2"
+            } else {
+                "F1F5F9"
+            },
+            if data.final_balance.difference > 0.0 {
+                "059669"
+            } else if data.final_balance.difference < 0.0 {
+                "DC2626"
+            } else {
+                "64748B"
+            },
             balance_label,
             // Footer
             utils::escape_typst(&company.name),
@@ -618,7 +642,8 @@ impl TypstTemplate for CashRegisterTemplate {
 
     fn validate(&self, data: &Value) -> Result<()> {
         // Validate required fields - accept both camelCase and snake_case
-        let obj = data.as_object()
+        let obj = data
+            .as_object()
             .context("Los datos deben ser un objeto JSON")?;
 
         // Pairs of (camelCase, snake_case) for required fields
@@ -711,7 +736,11 @@ mod tests {
         });
 
         let result = template.generate(&data);
-        assert!(result.is_ok(), "Template generation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Template generation failed: {:?}",
+            result.err()
+        );
 
         let typst_content = result.unwrap();
         assert!(typst_content.contains("Cuadre de Caja"));

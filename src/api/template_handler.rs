@@ -144,7 +144,10 @@ pub async fn generate_pdf_from_template(
 
                 return Ok(HttpResponse::Ok()
                     .content_type("application/pdf")
-                    .insert_header(("Content-Disposition", format!("attachment; filename=\"{}\"", filename)))
+                    .insert_header((
+                        "Content-Disposition",
+                        format!("attachment; filename=\"{}\"", filename),
+                    ))
                     .insert_header(("X-Document-Id", document_id.to_string()))
                     .body(pdf_bytes));
             }

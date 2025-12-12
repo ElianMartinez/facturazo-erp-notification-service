@@ -35,7 +35,10 @@ impl TypstGenerator {
         // Check common locations
         let candidates = [
             work_dir.join("fonts"),
-            work_dir.parent().map(|p| p.join("fonts")).unwrap_or_default(),
+            work_dir
+                .parent()
+                .map(|p| p.join("fonts"))
+                .unwrap_or_default(),
             PathBuf::from("fonts"),
             PathBuf::from("./fonts"),
         ];

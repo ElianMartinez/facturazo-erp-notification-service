@@ -36,7 +36,8 @@ impl ReportTemplate {
                 headers
                     .iter()
                     .map(|h| {
-                        let value = row.get(h)
+                        let value = row
+                            .get(h)
                             .map(|v| match v {
                                 serde_json::Value::String(s) => s.clone(),
                                 serde_json::Value::Number(n) => n.to_string(),
