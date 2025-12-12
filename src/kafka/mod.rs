@@ -11,6 +11,7 @@ use tracing::info;
 
 pub mod admin;
 pub mod consumer;
+pub mod erp_messages;
 pub mod handlers;
 pub mod producer;
 

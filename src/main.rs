@@ -13,6 +13,7 @@ use pdf_services::infrastructure::cache::CacheService;
 use pdf_services::infrastructure::generators::GeneratorFactory;
 use pdf_services::infrastructure::notifications::EmailService;
 use pdf_services::infrastructure::storage::StorageService;
+use pdf_services::kafka::erp_messages::ErpIntegrationEvent;
 use pdf_services::kafka::handlers::{KafkaHandler, KafkaMessage};
 use prometheus::Registry;
 use rdkafka::client::ClientContext;
@@ -164,11 +165,23 @@ async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<(
     let brokers = env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
     let group_id =
         env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| "pdf-service-worker".to_string());
-    let topics_str = env::var("KAFKA_TOPICS")
-        .unwrap_or_else(|_| "document-generate-request,notification-dispatch-request".to_string());
+
+    // Topic naming follows ERP Core convention: {env}.facturazo.ERP.{domain}.{event}
+    // Topics are created by ERP Core on startup - pdf-services only consumes
+    let env_prefix = env::var("KAFKA_ENV_PREFIX").unwrap_or_else(|_| "dev".to_string());
+    let base_namespace = format!("{}.facturazo.ERP", env_prefix);
+
+    // Build default topic names matching ERP Core's KafkaTopics constants
+    let default_topics = format!(
+        "{}.documents.generate_request,{}.notifications.dispatch_request",
+        base_namespace, base_namespace
+    );
+    let topics_str = env::var("KAFKA_TOPICS").unwrap_or(default_topics);
     let topics: Vec<&str> = topics_str.split(',').collect();
-    let response_topic =
-        env::var("KAFKA_RESPONSE_TOPIC").unwrap_or_else(|_| "document-events".to_string());
+
+    // Response topic for sending results back to ERP Core
+    let default_response_topic = format!("{}.documents.events", base_namespace);
+    let response_topic = env::var("KAFKA_RESPONSE_TOPIC").unwrap_or(default_response_topic);
 
     info!("Kafka worker connecting to brokers: {}", brokers);
     info!("Kafka consumer group: {}", group_id);
@@ -301,71 +314,95 @@ async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<(
                             correlation_id
                         );
 
-                        // Parse and process message
-                        match serde_json::from_str::<KafkaMessage>(payload) {
-                            Ok(kafka_msg) => {
-                                let handler_clone = handler.clone();
-                                let producer_clone = producer.clone();
-                                let response_topic_clone = response_topic.clone();
-                                let correlation_id_clone = correlation_id.clone();
-
-                                // Process message
-                                match handler_clone.handle(kafka_msg).await {
-                                    Ok(response) => {
-                                        info!("Kafka message processed successfully");
-
-                                        // Send response to response topic
-                                        if let Ok(response_json) = serde_json::to_string(&response) {
-                                            if let Some(ref cid) = correlation_id_clone {
-                                                let headers = rdkafka::message::OwnedHeaders::new()
-                                                    .insert(rdkafka::message::Header {
-                                                        key: "correlation_id",
-                                                        value: Some(cid.as_str()),
-                                                    });
-
-                                                let record_with_headers = FutureRecord::to(&response_topic_clone)
-                                                    .payload(&response_json)
-                                                    .key(cid.as_str())
-                                                    .headers(headers);
-
-                                                match producer_clone.send(record_with_headers, Duration::from_secs(5)).await {
-                                                    Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
-                                                    Err((e, _)) => error!("Failed to send response: {}", e),
-                                                }
-                                            } else {
-                                                let record = FutureRecord::<str, str>::to(&response_topic_clone)
-                                                    .payload(&response_json);
-
-                                                match producer_clone.send(record, Duration::from_secs(5)).await {
-                                                    Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
-                                                    Err((e, _)) => error!("Failed to send response: {}", e),
-                                                }
-                                            }
-                                        }
+                        // Parse and process message - try ERP format first, then simple format
+                        let kafka_msg = match serde_json::from_str::<ErpIntegrationEvent>(payload) {
+                            Ok(erp_event) => {
+                                info!("Parsed ERP integration event: {:?}", erp_event.event_type);
+                                // Debug log to check if html_body is being received
+                                if let Some(ref notif) = erp_event.notification {
+                                    info!("Notification info - channel: {}, recipient: {}, has_html_body: {}",
+                                        notif.channel, notif.recipient, notif.html_body.is_some());
+                                    if let Some(ref html) = notif.html_body {
+                                        info!("HTML body length: {} chars", html.len());
                                     }
+                                }
+                                match erp_event.into_kafka_message() {
+                                    Ok(msg) => msg,
                                     Err(e) => {
-                                        error!("Error processing Kafka message: {}", e);
+                                        error!("Failed to convert ERP event: {}", e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                // Fallback to simple KafkaMessage format
+                                match serde_json::from_str::<KafkaMessage>(payload) {
+                                    Ok(msg) => msg,
+                                    Err(e) => {
+                                        error!("Failed to parse Kafka message: {} - Payload: {}", e, payload);
+                                        continue;
+                                    }
+                                }
+                            }
+                        };
 
-                                        // Send error response
-                                        let error_response = serde_json::json!({
-                                            "type": "error",
-                                            "error": e.to_string(),
-                                            "correlation_id": correlation_id
-                                        });
+                        // Process message
+                        let handler_clone = handler.clone();
+                        let producer_clone = producer.clone();
+                        let response_topic_clone = response_topic.clone();
+                        let correlation_id_clone = correlation_id.clone();
 
-                                        if let Ok(error_json) = serde_json::to_string(&error_response) {
-                                            let key = correlation_id.clone().unwrap_or_default();
-                                            let record = FutureRecord::to(&response_topic_clone)
-                                                .payload(&error_json)
-                                                .key(&key);
+                        match handler_clone.handle(kafka_msg).await {
+                            Ok(response) => {
+                                info!("Kafka message processed successfully");
 
-                                            let _ = producer_clone.send(record, Duration::from_secs(5)).await;
+                                // Send response to response topic
+                                if let Ok(response_json) = serde_json::to_string(&response) {
+                                    if let Some(ref cid) = correlation_id_clone {
+                                        let headers = rdkafka::message::OwnedHeaders::new()
+                                            .insert(rdkafka::message::Header {
+                                                key: "correlation_id",
+                                                value: Some(cid.as_str()),
+                                            });
+
+                                        let record_with_headers = FutureRecord::to(&response_topic_clone)
+                                            .payload(&response_json)
+                                            .key(cid.as_str())
+                                            .headers(headers);
+
+                                        match producer_clone.send(record_with_headers, Duration::from_secs(5)).await {
+                                            Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
+                                            Err((e, _)) => error!("Failed to send response: {}", e),
+                                        }
+                                    } else {
+                                        let record = FutureRecord::<str, str>::to(&response_topic_clone)
+                                            .payload(&response_json);
+
+                                        match producer_clone.send(record, Duration::from_secs(5)).await {
+                                            Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
+                                            Err((e, _)) => error!("Failed to send response: {}", e),
                                         }
                                     }
                                 }
                             }
                             Err(e) => {
-                                error!("Failed to parse Kafka message: {} - Payload: {}", e, payload);
+                                error!("Error processing Kafka message: {}", e);
+
+                                // Send error response
+                                let error_response = serde_json::json!({
+                                    "type": "error",
+                                    "error": e.to_string(),
+                                    "correlation_id": correlation_id
+                                });
+
+                                if let Ok(error_json) = serde_json::to_string(&error_response) {
+                                    let key = correlation_id.clone().unwrap_or_default();
+                                    let record = FutureRecord::to(&response_topic_clone)
+                                        .payload(&error_json)
+                                        .key(&key);
+
+                                    let _ = producer_clone.send(record, Duration::from_secs(5)).await;
+                                }
                             }
                         }
 

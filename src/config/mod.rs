@@ -49,6 +49,7 @@ pub struct KafkaConfig {
 }
 
 /// Kafka topics configuration
+/// Topic names follow ERP Core convention: {env}.facturazo.ERP.{domain}.{event}
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct KafkaTopics {
     pub document_request: String,
@@ -56,6 +57,27 @@ pub struct KafkaTopics {
     pub notification_dispatch: String,
     pub events: String,
     pub dlq: String,
+}
+
+impl Default for KafkaTopics {
+    fn default() -> Self {
+        // Read environment prefix from env var or default to "dev"
+        let env_prefix = std::env::var("KAFKA_ENV_PREFIX").unwrap_or_else(|_| "dev".to_string());
+        let base = format!("{}.facturazo.ERP", env_prefix);
+
+        Self {
+            // Matches ERP Core: KafkaTopics.Documents.GenerateRequest
+            document_request: format!("{}.documents.generate_request", base),
+            // Matches ERP Core: KafkaTopics.Documents.BatchRequest
+            document_batch: format!("{}.documents.batch_request", base),
+            // Matches ERP Core: KafkaTopics.NotificationDispatch.DispatchRequest
+            notification_dispatch: format!("{}.notifications.dispatch_request", base),
+            // Matches ERP Core: KafkaTopics.Documents.Events (response topic)
+            events: format!("{}.documents.events", base),
+            // Dead letter queue for failed messages
+            dlq: format!("{}.documents.dlq", base),
+        }
+    }
 }
 
 /// Kafka security configuration
@@ -175,15 +197,9 @@ impl Default for AppConfig {
             },
             kafka: KafkaConfig {
                 brokers: "localhost:9092".to_string(),
-                group_id: "document-service".to_string(),
-                client_id: "document-service-01".to_string(),
-                topics: KafkaTopics {
-                    document_request: "document-generate-request".to_string(),
-                    document_batch: "document-batch-request".to_string(),
-                    notification_dispatch: "notification-dispatch-request".to_string(),
-                    events: "document-events".to_string(),
-                    dlq: "document-dlq".to_string(),
-                },
+                group_id: "pdf-services-consumer".to_string(),
+                client_id: "pdf-services-01".to_string(),
+                topics: KafkaTopics::default(),
                 security: None,
             },
             storage: StorageConfig {

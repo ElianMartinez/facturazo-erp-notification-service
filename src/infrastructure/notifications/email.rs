@@ -50,7 +50,13 @@ impl EmailService {
         html_body: Option<&str>,
         attachments: Vec<EmailAttachment>,
     ) -> Result<String> {
-        info!("Sending email to {} with subject: {}", to_email, subject);
+        info!(
+            "Sending email to {} with subject: {}, has_html: {}, attachments: {}",
+            to_email,
+            subject,
+            html_body.is_some(),
+            attachments.len()
+        );
 
         // Build the email
         let email = Message::builder()
@@ -58,8 +64,49 @@ impl EmailService {
             .to(to_email.parse()?)
             .subject(subject);
 
-        // Create multipart message
-        let mut multipart = if let Some(html) = html_body {
+        // Build multipart message with correct MIME structure:
+        // - With HTML + attachments: mixed { alternative { text, html }, attachments }
+        // - With HTML only: alternative { text, html }
+        // - With text + attachments: mixed { text, attachments }
+        // - With text only: mixed { text }
+
+        let has_attachments = !attachments.is_empty();
+        let has_html = html_body.is_some();
+
+        let multipart = if has_html && has_attachments {
+            // Correct structure: multipart/mixed containing multipart/alternative + attachments
+            let alternative = MultiPart::alternative()
+                .singlepart(
+                    SinglePart::builder()
+                        .header(header::ContentType::TEXT_PLAIN)
+                        .body(body.to_string()),
+                )
+                .singlepart(
+                    SinglePart::builder()
+                        .header(header::ContentType::TEXT_HTML)
+                        .body(html_body.unwrap().to_string()),
+                );
+
+            // Wrap alternative in mixed, then add attachments
+            let mut mixed = MultiPart::mixed().multipart(alternative);
+
+            for attachment in attachments {
+                let content_type = match attachment.content_type.as_str() {
+                    "application/pdf" => "application/pdf",
+                    "image/png" => "image/png",
+                    "image/jpeg" => "image/jpeg",
+                    _ => "application/octet-stream",
+                };
+
+                mixed = mixed.singlepart(
+                    LettreAttachment::new(attachment.filename)
+                        .body(attachment.data, content_type.parse()?),
+                );
+            }
+
+            mixed
+        } else if has_html {
+            // HTML only, no attachments - use alternative directly
             MultiPart::alternative()
                 .singlepart(
                     SinglePart::builder()
@@ -69,30 +116,32 @@ impl EmailService {
                 .singlepart(
                     SinglePart::builder()
                         .header(header::ContentType::TEXT_HTML)
-                        .body(html.to_string()),
+                        .body(html_body.unwrap().to_string()),
                 )
         } else {
-            MultiPart::mixed().singlepart(
+            // Plain text with or without attachments
+            let mut mixed = MultiPart::mixed().singlepart(
                 SinglePart::builder()
                     .header(header::ContentType::TEXT_PLAIN)
                     .body(body.to_string()),
-            )
-        };
-
-        // Add attachments
-        for attachment in attachments {
-            let content_type = match attachment.content_type.as_str() {
-                "application/pdf" => "application/pdf",
-                "image/png" => "image/png",
-                "image/jpeg" => "image/jpeg",
-                _ => "application/octet-stream",
-            };
-
-            multipart = multipart.singlepart(
-                LettreAttachment::new(attachment.filename)
-                    .body(attachment.data, content_type.parse()?),
             );
-        }
+
+            for attachment in attachments {
+                let content_type = match attachment.content_type.as_str() {
+                    "application/pdf" => "application/pdf",
+                    "image/png" => "image/png",
+                    "image/jpeg" => "image/jpeg",
+                    _ => "application/octet-stream",
+                };
+
+                mixed = mixed.singlepart(
+                    LettreAttachment::new(attachment.filename)
+                        .body(attachment.data, content_type.parse()?),
+                );
+            }
+
+            mixed
+        };
 
         let email = email.multipart(multipart)?;
 

@@ -24,6 +24,7 @@ use pdf_services::infrastructure::cache::CacheService;
 use pdf_services::infrastructure::generators::GeneratorFactory;
 use pdf_services::infrastructure::notifications::EmailService;
 use pdf_services::infrastructure::storage::StorageService;
+use pdf_services::kafka::erp_messages::ErpIntegrationEvent;
 use pdf_services::kafka::handlers::{KafkaHandler, KafkaMessage};
 use std::path::PathBuf;
 
@@ -67,12 +68,24 @@ async fn main() -> Result<()> {
     dotenv::dotenv().ok();
 
     let brokers = env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string());
-    let group_id = env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| "pdf-service-worker".to_string());
-    let topics_str = env::var("KAFKA_TOPICS")
-        .unwrap_or_else(|_| "document-generate-request,notification-dispatch-request".to_string());
+    let group_id = env::var("KAFKA_GROUP_ID").unwrap_or_else(|_| "pdf-services-consumer".to_string());
+
+    // Topic naming follows ERP Core convention: {env}.facturazo.ERP.{domain}.{event}
+    // Topics are created by ERP Core on startup - pdf-services only consumes
+    let env_prefix = env::var("KAFKA_ENV_PREFIX").unwrap_or_else(|_| "dev".to_string());
+    let base_namespace = format!("{}.facturazo.ERP", env_prefix);
+
+    // Build default topic names matching ERP Core's KafkaTopics constants
+    let default_topics = format!(
+        "{}.documents.generate_request,{}.notifications.dispatch_request",
+        base_namespace, base_namespace
+    );
+    let topics_str = env::var("KAFKA_TOPICS").unwrap_or(default_topics);
     let topics: Vec<&str> = topics_str.split(',').collect();
-    let response_topic =
-        env::var("KAFKA_RESPONSE_TOPIC").unwrap_or_else(|_| "document-events".to_string());
+
+    // Response topic for sending results back to ERP Core
+    let default_response_topic = format!("{}.documents.events", base_namespace);
+    let response_topic = env::var("KAFKA_RESPONSE_TOPIC").unwrap_or(default_response_topic);
 
     info!("Connecting to Kafka brokers: {}", brokers);
     info!("Consumer group: {}", group_id);
@@ -216,9 +229,33 @@ async fn main() -> Result<()> {
                             correlation_id
                         );
 
-                        // Parse and process message
-                        match serde_json::from_str::<KafkaMessage>(payload) {
-                            Ok(kafka_msg) => {
+                        // Parse and process message - try ERP format first, then simple format
+                        let kafka_msg = match serde_json::from_str::<ErpIntegrationEvent>(payload) {
+                            Ok(erp_event) => {
+                                info!("Parsed ERP integration event: {:?}", erp_event.event_type);
+                                match erp_event.into_kafka_message() {
+                                    Ok(msg) => msg,
+                                    Err(e) => {
+                                        error!("Failed to convert ERP event: {}", e);
+                                        continue;
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                // Fallback to simple KafkaMessage format
+                                match serde_json::from_str::<KafkaMessage>(payload) {
+                                    Ok(msg) => msg,
+                                    Err(e) => {
+                                        error!("Failed to parse Kafka message: {} - Payload: {}", e, payload);
+                                        continue;
+                                    }
+                                }
+                            }
+                        };
+
+                        // Process message
+                        {
+                            let kafka_msg = kafka_msg;
                                 let handler_clone = handler.clone();
                                 let producer_clone = producer.clone();
                                 let response_topic_clone = response_topic.clone();
@@ -279,10 +316,6 @@ async fn main() -> Result<()> {
                                         }
                                     }
                                 }
-                            }
-                            Err(e) => {
-                                error!("Failed to parse Kafka message: {} - Payload: {}", e, payload);
-                            }
                         }
 
                         // Commit offset

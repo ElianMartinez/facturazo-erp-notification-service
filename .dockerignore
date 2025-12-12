@@ -1,6 +1,7 @@
 # Build artifacts
 target/
 *.rs.bk
+Cargo.lock.bak
 
 # IDE
 .idea/
@@ -11,11 +12,12 @@ target/
 # Git
 .git/
 .gitignore
+.gitattributes
 
 # Documentation
 docs/
 *.md
-!README.md
+LICENSE
 
 # CI/CD
 .github/
@@ -23,6 +25,7 @@ docs/
 # Test files
 tests/
 examples/
+benches/
 
 # Local config
 .env
@@ -33,9 +36,23 @@ examples/
 facturas/
 reportes/
 cotizaciones/
+storage/
+work/
+data/
 *.pdf
 *.xlsx
+*.typ
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# Docker files (not needed in build context)
+docker-compose*.yml
+Dockerfile.dev
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
