@@ -516,10 +516,11 @@ async fn deliver_report(
 
     // Configure email if needed
     if delivery.email.is_some() {
+        // SMTP_PASS is used for compatibility with .env files, fallback to SMTP_PASSWORD
         if let (Ok(host), Ok(user), Ok(pass)) = (
             std::env::var("SMTP_HOST"),
             std::env::var("SMTP_USER"),
-            std::env::var("SMTP_PASSWORD"),
+            std::env::var("SMTP_PASS").or_else(|_| std::env::var("SMTP_PASSWORD")),
         ) {
             let port = std::env::var("SMTP_PORT")
                 .unwrap_or_else(|_| "587".to_string())
@@ -531,7 +532,15 @@ async fn deliver_report(
             let from_name =
                 std::env::var("SMTP_FROM_NAME").unwrap_or_else(|_| "Facturazo ERP".into());
 
+            tracing::info!(
+                "Email service configured: host={}, port={}, from={}",
+                host,
+                port,
+                from_email
+            );
             builder = builder.with_email(host, port, user, pass, from_email, from_name, true);
+        } else {
+            tracing::warn!("Email delivery requested but SMTP config not found. Required: SMTP_HOST, SMTP_USER, SMTP_PASS");
         }
     }
 
@@ -542,7 +551,14 @@ async fn deliver_report(
             std::env::var("EVOLUTION_INSTANCE"),
             std::env::var("EVOLUTION_API_KEY"),
         ) {
+            tracing::info!(
+                "WhatsApp service configured: url={}, instance={}",
+                base_url,
+                instance
+            );
             builder = builder.with_whatsapp(base_url, api_key, instance);
+        } else {
+            tracing::warn!("WhatsApp delivery requested but config not found. Required: EVOLUTION_API_URL, EVOLUTION_INSTANCE, EVOLUTION_API_KEY");
         }
     }
 
