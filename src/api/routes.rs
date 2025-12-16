@@ -2,6 +2,7 @@ use actix_cors::Cors;
 use actix_web::middleware::Logger;
 use actix_web::{web, HttpResponse};
 
+use super::erp_report_handler;
 use super::handlers;
 use super::middleware::{auth::create_auth_middleware, compression::create_compression_middleware};
 use super::template_handler;
@@ -53,6 +54,15 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                         .route("/{id}", web::get().to(get_template))
                         .route("/{id}", web::put().to(update_template))
                         .route("/{id}/reload", web::post().to(reload_template)),
+                )
+                // ERP Reports generation
+                .service(
+                    web::scope("/reports")
+                        .route("/generate/sync", web::post().to(erp_report_handler::generate_erp_report_sync))
+                        .route("/generate/stream", web::post().to(erp_report_handler::generate_erp_report_stream))
+                        .route("/generate/async", web::post().to(erp_report_handler::generate_erp_report_async))
+                        .route("/{id}/status", web::get().to(erp_report_handler::get_report_status))
+                        .route("/{id}/download", web::get().to(erp_report_handler::download_report)),
                 ),
         );
 }

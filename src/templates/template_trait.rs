@@ -56,6 +56,10 @@ impl TemplateRegistry {
         let cash_register = Arc::new(CashRegisterTemplate::new());
         templates.insert(cash_register.template_id().to_string(), cash_register);
 
+        // ERP Report (Generic)
+        let erp_report = Arc::new(ErpReportTemplate::new());
+        templates.insert(erp_report.template_id().to_string(), erp_report);
+
         Self { templates }
     }
 

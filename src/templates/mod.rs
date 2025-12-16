@@ -1,8 +1,10 @@
+pub mod erp_report_models;
 pub mod template_engine;
 pub mod template_models;
 pub mod template_trait;
 pub mod templates;
 
+pub use erp_report_models::*;
 pub use template_engine::*;
 pub use template_models::*;
 pub use template_trait::{TemplateRegistry, TypstTemplate};

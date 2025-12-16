@@ -1,4 +1,58 @@
 services:
+  # PDF Services API + Kafka Worker
+  pdf-services:
+    image: elianmartinez157/facturazo-erp.pdf-services:dev-latest
+    container_name: pdf-services-api
+    ports:
+      - "8080:8080"
+    environment:
+      # Server
+      HOST: 0.0.0.0
+      PORT: 8080
+      RUST_LOG: info
+
+      # Kafka
+      KAFKA_ENABLED: "true"
+      KAFKA_BROKERS: kafka:9092
+      KAFKA_GROUP_ID: pdf-services-group
+      KAFKA_ENV_PREFIX: dev
+
+      # Storage (MinIO/S3)
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_REGION: us-east-1
+      S3_BUCKET_DOCUMENTS: documents
+      S3_BUCKET_TEMP: temp-uploads
+
+      # WhatsApp (EvolutionAPI)
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
+      EVOLUTION_INSTANCE: ${EVOLUTION_INSTANCE:-}
+
+      # Rate Limiting
+      RATE_LIMIT_PER_MINUTE: "100"
+      RATE_LIMIT_BURST: "20"
+
+      # Email (SMTP) - Optional
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@example.com}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-PDF Service}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   # Kafka with KRaft (Apache official image)
   kafka:
     image: apache/kafka:3.7.0

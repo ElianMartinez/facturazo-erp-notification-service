@@ -19,6 +19,8 @@ pub mod typst_generator;
 
 // Excel & CSV generators
 pub mod csv_generator;
+pub mod erp_report_csv_generator;
+pub mod erp_report_excel_generator;
 pub mod excel_generator;
 
 // Template management
@@ -26,6 +28,8 @@ pub mod template_manager;
 
 // Re-exports
 pub use csv_generator::CsvGenerator;
+pub use erp_report_csv_generator::ErpReportCsvGenerator;
+pub use erp_report_excel_generator::ErpReportExcelGenerator;
 pub use excel_generator::ExcelGenerator;
 pub use invoice_generator::InvoiceGenerator;
 pub use qr_generator::QRGenerator;

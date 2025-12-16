@@ -244,29 +244,50 @@ cargo run --bin benchmark-report
 ## Variables de Entorno
 
 ```env
-# Database
-DATABASE_URL=sqlite://data/documents.db
+# === Server ===
+HOST=0.0.0.0
+PORT=8080
+RUST_LOG=info
 
-# Kafka
-KAFKA_BROKERS=127.0.0.1:9092
+# === Kafka ===
+KAFKA_ENABLED=true
+KAFKA_BROKERS=localhost:9092
+KAFKA_GROUP_ID=pdf-service-worker
+KAFKA_ENV_PREFIX=dev
 
-# Storage
-S3_ENDPOINT=http://127.0.0.1:9000
-S3_BUCKET=documents
+# === AWS S3 / Cloudflare R2 ===
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_REGION=us-east-1
+# AWS_ENDPOINT_URL=http://localhost:9000  # Solo para MinIO local
+S3_BUCKET_DOCUMENTS=documents
+S3_BUCKET_TEMP=temp-uploads
+# CDN_URL=https://cdn.yourdomain.com  # Opcional
 
-# API
-API_PORT=8080
-RATE_LIMIT_REQUESTS=100
+# === Rate Limiting ===
+RATE_LIMIT_PER_MINUTE=100
+RATE_LIMIT_BURST=20
 
-# WhatsApp
-EVOLUTION_API_URL=http://5.161.120.166:8080
+# === File Limits ===
+MAX_SYNC_SIZE_BYTES=1048576
+MAX_UPLOAD_SIZE_BYTES=104857600
+SYNC_TIMEOUT_MS=5000
+ENABLE_COMPRESSION=true
+
+# === Email (SMTP) - Opcional ===
+# Las 3 variables (HOST, USER, PASS) son requeridas para habilitar email
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM_EMAIL=noreply@yourdomain.com
+SMTP_FROM_NAME=Your Company Name
+
+# === WhatsApp (EvolutionAPI) - Opcional ===
+# Las 3 variables son requeridas para habilitar WhatsApp
+EVOLUTION_API_URL=https://your-evolution-api.com
 EVOLUTION_API_KEY=your-api-key
-EVOLUTION_INSTANCE=FACTURAZO-ERP-DEV
-
-# Email
-SMTP_HOST=smtp.example.com
-SMTP_USER=user
-SMTP_PASSWORD=password
+EVOLUTION_INSTANCE=your-instance-name
 ```
 
 ---

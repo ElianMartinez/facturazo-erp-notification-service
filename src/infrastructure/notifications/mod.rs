@@ -3,6 +3,7 @@
 //! This module contains implementations for various notification channels
 
 pub mod email;
+pub mod erp_report_notifier;
 pub mod evolution_api;
 
 use anyhow::Result;
@@ -11,6 +12,7 @@ use async_trait::async_trait;
 // Re-export main types
 pub use email::EmailAttachment;
 pub use email::EmailService;
+pub use erp_report_notifier::{DeliveryResult, ErpReportNotifier, ErpReportNotifierBuilder};
 pub use evolution_api::EvolutionAPIClient;
 pub use evolution_api::EvolutionAPIClient as EvolutionApiClient; // Alias
 
