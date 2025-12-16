@@ -21,7 +21,11 @@ impl ErpReportTemplate {
             .unwrap_or(&PageSize::Letter)
             .to_typst_paper();
 
-        let orientation = match output.orientation.as_ref().unwrap_or(&PageOrientation::Portrait) {
+        let orientation = match output
+            .orientation
+            .as_ref()
+            .unwrap_or(&PageOrientation::Portrait)
+        {
             PageOrientation::Portrait => "",
             PageOrientation::Landscape => ", flipped: true",
         };
@@ -55,14 +59,12 @@ impl ErpReportTemplate {
                     _ => n.to_string(),
                 }
             }
-            serde_json::Value::String(s) => {
-                match column.column_type {
-                    ColumnType::Date => self.format_date(s),
-                    ColumnType::DateTime => self.format_datetime(s),
-                    ColumnType::Time => s.clone(),
-                    _ => utils::escape_typst(s),
-                }
-            }
+            serde_json::Value::String(s) => match column.column_type {
+                ColumnType::Date => self.format_date(s),
+                ColumnType::DateTime => self.format_datetime(s),
+                ColumnType::Time => s.clone(),
+                _ => utils::escape_typst(s),
+            },
             _ => utils::escape_typst(&value.to_string()),
         }
     }
@@ -141,7 +143,10 @@ impl ErpReportTemplate {
     }
 
     /// Get visible columns (non-hidden)
-    fn get_visible_columns<'a>(&self, columns: &'a [ColumnDefinition]) -> Vec<&'a ColumnDefinition> {
+    fn get_visible_columns<'a>(
+        &self,
+        columns: &'a [ColumnDefinition],
+    ) -> Vec<&'a ColumnDefinition> {
         columns.iter().filter(|c| !c.hidden).collect()
     }
 
@@ -205,7 +210,12 @@ impl ErpReportTemplate {
                     "\"regular\""
                 };
 
-                let color = if col.highlight.as_ref().map(|h| h == "primary").unwrap_or(false) {
+                let color = if col
+                    .highlight
+                    .as_ref()
+                    .map(|h| h == "primary")
+                    .unwrap_or(false)
+                {
                     ", fill: rgb(24, 144, 255)"
                 } else {
                     ""
@@ -303,10 +313,7 @@ impl ErpReportTemplate {
 
         let widths = self.generate_column_widths(columns);
         let header = self.generate_header_row(columns);
-        let show_subtotals = grouping
-            .as_ref()
-            .map(|g| g.show_subtotals)
-            .unwrap_or(false);
+        let show_subtotals = grouping.as_ref().map(|g| g.show_subtotals).unwrap_or(false);
         let subtotal_label = grouping
             .as_ref()
             .and_then(|g| g.subtotal_label.clone())
@@ -367,10 +374,7 @@ impl ErpReportTemplate {
 
         let widths = self.generate_column_widths(columns);
         let header = self.generate_header_row(columns);
-        let show_subtotals = grouping
-            .as_ref()
-            .map(|g| g.show_subtotals)
-            .unwrap_or(false);
+        let show_subtotals = grouping.as_ref().map(|g| g.show_subtotals).unwrap_or(false);
 
         let mut all_rows = Vec::new();
 
@@ -403,7 +407,11 @@ impl ErpReportTemplate {
                         if let Some(ref subtotal) = sub_group.subtotal {
                             all_rows.push(format!(
                                 "table.hline(stroke: 0.5pt + rgb(200, 200, 200)),\n    {}",
-                                self.generate_subtotal_row(subtotal, columns, &format!("Subtotal {}", &sub_group.label))
+                                self.generate_subtotal_row(
+                                    subtotal,
+                                    columns,
+                                    &format!("Subtotal {}", &sub_group.label)
+                                )
                             ));
                         }
                     }
@@ -420,7 +428,11 @@ impl ErpReportTemplate {
                 if let Some(ref subtotal) = group.subtotal {
                     all_rows.push(format!(
                         "table.hline(stroke: 1pt + rgb(180, 180, 180)),\n    {}",
-                        self.generate_subtotal_row(subtotal, columns, &format!("Total {}", &group.label))
+                        self.generate_subtotal_row(
+                            subtotal,
+                            columns,
+                            &format!("Total {}", &group.label)
+                        )
                     ));
                 }
             }
@@ -480,10 +492,7 @@ impl ErpReportTemplate {
             ));
 
             if let Some(count) = summary.document_count {
-                content.push_str(&format!(
-                    "\n    [Documentos:], [{}],",
-                    count
-                ));
+                content.push_str(&format!("\n    [Documentos:], [{}],", count));
             }
 
             if let Some(ref totals) = summary.totals {
@@ -573,7 +582,9 @@ impl ErpReportTemplate {
 
             // Check if logo_url is a local file (not a URL)
             // Typst's #image() only supports local files, not URLs
-            let has_local_logo = company.logo_url.as_ref()
+            let has_local_logo = company
+                .logo_url
+                .as_ref()
                 .map(|url| !url.starts_with("http://") && !url.starts_with("https://"))
                 .unwrap_or(false);
 
@@ -594,11 +605,21 @@ impl ErpReportTemplate {
 #v(8pt)"#,
                     company.logo_url.as_ref().unwrap(),
                     utils::escape_typst(company_name),
-                    company.tax_id.as_ref()
-                        .map(|t| format!("\n      #text(size: 9pt, fill: gray)[RNC: {}]", utils::escape_typst(t)))
+                    company
+                        .tax_id
+                        .as_ref()
+                        .map(|t| format!(
+                            "\n      #text(size: 9pt, fill: gray)[RNC: {}]",
+                            utils::escape_typst(t)
+                        ))
                         .unwrap_or_default(),
-                    company.address.as_ref()
-                        .map(|a| format!("\n      #text(size: 8pt, fill: gray)[{}]", utils::escape_typst(a)))
+                    company
+                        .address
+                        .as_ref()
+                        .map(|a| format!(
+                            "\n      #text(size: 8pt, fill: gray)[{}]",
+                            utils::escape_typst(a)
+                        ))
                         .unwrap_or_default()
                 ));
             } else {
@@ -611,11 +632,21 @@ impl ErpReportTemplate {
 ]
 #v(6pt)"#,
                     utils::escape_typst(company_name),
-                    company.tax_id.as_ref()
-                        .map(|t| format!("\n  #text(size: 10pt, fill: gray)[RNC: {}]", utils::escape_typst(t)))
+                    company
+                        .tax_id
+                        .as_ref()
+                        .map(|t| format!(
+                            "\n  #text(size: 10pt, fill: gray)[RNC: {}]",
+                            utils::escape_typst(t)
+                        ))
                         .unwrap_or_default(),
-                    company.address.as_ref()
-                        .map(|a| format!("\n  #text(size: 9pt, fill: gray)[{}]", utils::escape_typst(a)))
+                    company
+                        .address
+                        .as_ref()
+                        .map(|a| format!(
+                            "\n  #text(size: 9pt, fill: gray)[{}]",
+                            utils::escape_typst(a)
+                        ))
                         .unwrap_or_default()
                 ));
             }
@@ -631,8 +662,13 @@ impl ErpReportTemplate {
 #line(length: 100%, stroke: 1pt + rgb(24, 144, 255))
 #v(8pt)"#,
             utils::escape_typst(&report.title),
-            report.breadcrumb.as_ref()
-                .map(|b| format!("\n  #v(2pt)\n  #text(size: 9pt, fill: gray)[{}]", utils::escape_typst(b)))
+            report
+                .breadcrumb
+                .as_ref()
+                .map(|b| format!(
+                    "\n  #v(2pt)\n  #text(size: 9pt, fill: gray)[{}]",
+                    utils::escape_typst(b)
+                ))
                 .unwrap_or_default()
         ));
 
@@ -684,9 +720,7 @@ impl TypstTemplate for ErpReportTemplate {
         if let Some(ref company) = payload.company_info {
             println!(
                 "DEBUG: Company info received: name={}, tax_id={:?}, logo_url={:?}",
-                company.name,
-                company.tax_id,
-                company.logo_url
+                company.name, company.tax_id, company.logo_url
             );
         } else {
             println!("DEBUG: No company info in payload");
@@ -707,14 +741,22 @@ impl TypstTemplate for ErpReportTemplate {
             }
             DataStructureType::Grouped => {
                 if let Some(ref groups) = payload.data.groups {
-                    self.generate_grouped_table(groups, &visible_columns, &payload.metadata.grouping)
+                    self.generate_grouped_table(
+                        groups,
+                        &visible_columns,
+                        &payload.metadata.grouping,
+                    )
                 } else {
                     self.generate_empty_message()
                 }
             }
             DataStructureType::HierarchicalGrouped => {
                 if let Some(ref groups) = payload.data.groups {
-                    self.generate_hierarchical_table(groups, &visible_columns, &payload.metadata.grouping)
+                    self.generate_hierarchical_table(
+                        groups,
+                        &visible_columns,
+                        &payload.metadata.grouping,
+                    )
                 } else {
                     self.generate_empty_message()
                 }
@@ -775,7 +817,7 @@ impl TypstTemplate for ErpReportTemplate {
                 self.generate_header_section(
                     &payload.report,
                     &payload.company_info,
-                    payload.output.show_logo
+                    payload.output.show_logo,
                 )
             } else {
                 String::new()

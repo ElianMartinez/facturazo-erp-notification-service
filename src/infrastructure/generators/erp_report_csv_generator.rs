@@ -74,8 +74,12 @@ impl ErpReportCsvGenerator {
         }
 
         // Get visible columns
-        let columns: Vec<&ColumnDefinition> =
-            payload.metadata.columns.iter().filter(|c| !c.hidden).collect();
+        let columns: Vec<&ColumnDefinition> = payload
+            .metadata
+            .columns
+            .iter()
+            .filter(|c| !c.hidden)
+            .collect();
 
         // Write header row
         Self::write_header_row(&mut output, &columns, delimiter)?;
@@ -165,7 +169,9 @@ impl ErpReportCsvGenerator {
         include_subtotals: bool,
     ) -> Result<()> {
         // Write group header as a row
-        let empty_cols = delimiter.to_string().repeat(columns.len().saturating_sub(1));
+        let empty_cols = delimiter
+            .to_string()
+            .repeat(columns.len().saturating_sub(1));
         writeln!(output, "\"--- {} ---\"{}", group.label, empty_cols)?;
 
         // Write group rows
@@ -221,8 +227,14 @@ impl ErpReportCsvGenerator {
     ) -> Result<()> {
         // Write group header with indentation
         let indent = "  ".repeat(level);
-        let empty_cols = delimiter.to_string().repeat(columns.len().saturating_sub(1));
-        writeln!(output, "\"{}--- {} ---\"{}", indent, group.label, empty_cols)?;
+        let empty_cols = delimiter
+            .to_string()
+            .repeat(columns.len().saturating_sub(1));
+        writeln!(
+            output,
+            "\"{}--- {} ---\"{}",
+            indent, group.label, empty_cols
+        )?;
 
         // Write subgroups
         if let Some(ref sub_groups) = group.sub_groups {
@@ -267,7 +279,9 @@ impl ErpReportCsvGenerator {
     ) -> Result<()> {
         // Write opening balance if present
         if let Some(ref opening) = payload.data.opening_balance {
-            let empty_cols = delimiter.to_string().repeat(columns.len().saturating_sub(2));
+            let empty_cols = delimiter
+                .to_string()
+                .repeat(columns.len().saturating_sub(2));
             writeln!(
                 output,
                 "\"{}\"{}{}\"{}\"",
@@ -343,7 +357,9 @@ impl ErpReportCsvGenerator {
 
         // Add record count if present
         if let Some(count) = grand_total.get("recordCount").and_then(|v| v.as_i64()) {
-            let empty_cols = delimiter.to_string().repeat(columns.len().saturating_sub(1));
+            let empty_cols = delimiter
+                .to_string()
+                .repeat(columns.len().saturating_sub(1));
             writeln!(output, "\"Total registros: {}\"{}", count, empty_cols)?;
         }
 
@@ -407,7 +423,10 @@ impl ErpReportCsvGenerator {
     }
 
     fn escape_csv(value: &str) -> String {
-        if value.contains(',') || value.contains('"') || value.contains('\n') || value.contains('\r')
+        if value.contains(',')
+            || value.contains('"')
+            || value.contains('\n')
+            || value.contains('\r')
         {
             format!("\"{}\"", value.replace('"', "\"\""))
         } else {
@@ -445,7 +464,10 @@ mod tests {
         for i in 0..3 {
             let mut row = HashMap::new();
             row.insert("name".to_string(), serde_json::json!(format!("Item {}", i)));
-            row.insert("amount".to_string(), serde_json::json!(100.0 * (i + 1) as f64));
+            row.insert(
+                "amount".to_string(),
+                serde_json::json!(100.0 * (i + 1) as f64),
+            );
             rows.push(row);
         }
 

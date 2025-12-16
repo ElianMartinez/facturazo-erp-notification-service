@@ -8,7 +8,8 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use tracing::{error, info, warn};
 
 use crate::templates::erp_report_models::{
-    DeliveryMethod, DeliveryOptions, EmailDelivery, ErpReportPayload, OutputFormat, WhatsAppDelivery,
+    DeliveryMethod, DeliveryOptions, EmailDelivery, ErpReportPayload, OutputFormat,
+    WhatsAppDelivery,
 };
 
 use super::email::{EmailAttachment, EmailService};
@@ -129,12 +130,12 @@ impl ErpReportNotifier {
         let subject = email_delivery.subject.clone().unwrap_or_else(|| {
             format!(
                 "Reporte: {} - {}",
-                payload.report.title,
-                payload.report.code
+                payload.report.title, payload.report.code
             )
         });
 
-        let (plain_body, html_body) = self.build_report_email_content(payload, &email_delivery.message);
+        let (plain_body, html_body) =
+            self.build_report_email_content(payload, &email_delivery.message);
 
         // Build attachment
         let (filename, content_type) = self.get_attachment_info(payload);
@@ -251,13 +252,12 @@ impl ErpReportNotifier {
                         Ok(doc_id) => {
                             info!("WhatsApp document sent to {}: {}", number, doc_id);
                             result.successful_recipients.push(number.clone());
-                            result.message_ids.push(format!("text:{},doc:{}", text_id, doc_id));
+                            result
+                                .message_ids
+                                .push(format!("text:{},doc:{}", text_id, doc_id));
                         }
                         Err(e) => {
-                            warn!(
-                                "Text sent but document failed for {}: {}",
-                                number, e
-                            );
+                            warn!("Text sent but document failed for {}: {}", number, e);
                             result
                                 .failed_recipients
                                 .push((number.clone(), format!("Document failed: {}", e)));
@@ -301,9 +301,9 @@ impl ErpReportNotifier {
         };
 
         // Custom message or default
-        let intro = custom_message.clone().unwrap_or_else(|| {
-            "Se adjunta el reporte solicitado.".to_string()
-        });
+        let intro = custom_message
+            .clone()
+            .unwrap_or_else(|| "Se adjunta el reporte solicitado.".to_string());
 
         // Plain text version
         let plain_body = format!(
@@ -553,22 +553,18 @@ A continuación recibirá el documento."#,
 
     /// Get filename and content type for attachment
     fn get_attachment_info(&self, payload: &ErpReportPayload) -> (String, String) {
-        let base_name = payload
-            .output
-            .file_name
-            .clone()
-            .unwrap_or_else(|| {
-                format!(
-                    "{}_{}_{}",
-                    payload.report.code,
-                    payload
-                        .report
-                        .variant
-                        .clone()
-                        .unwrap_or_else(|| "REPORT".to_string()),
-                    chrono::Local::now().format("%Y%m%d_%H%M%S")
-                )
-            });
+        let base_name = payload.output.file_name.clone().unwrap_or_else(|| {
+            format!(
+                "{}_{}_{}",
+                payload.report.code,
+                payload
+                    .report
+                    .variant
+                    .clone()
+                    .unwrap_or_else(|| "REPORT".to_string()),
+                chrono::Local::now().format("%Y%m%d_%H%M%S")
+            )
+        });
 
         match payload.output.format {
             OutputFormat::Pdf => (format!("{}.pdf", base_name), "application/pdf".to_string()),
@@ -640,12 +636,7 @@ impl ErpReportNotifierBuilder {
     }
 
     /// Configure WhatsApp service
-    pub fn with_whatsapp(
-        mut self,
-        base_url: String,
-        api_key: String,
-        instance: String,
-    ) -> Self {
+    pub fn with_whatsapp(mut self, base_url: String, api_key: String, instance: String) -> Self {
         self.whatsapp_client = Some(EvolutionAPIClient::new(base_url, api_key, instance));
         self
     }
@@ -707,7 +698,9 @@ mod tests {
     #[test]
     fn test_delivery_result_success() {
         let mut result = DeliveryResult::new(DeliveryMethod::Email);
-        result.successful_recipients.push("test@example.com".to_string());
+        result
+            .successful_recipients
+            .push("test@example.com".to_string());
 
         assert!(result.is_success());
         assert!(!result.is_partial_success());
@@ -716,8 +709,12 @@ mod tests {
     #[test]
     fn test_delivery_result_partial() {
         let mut result = DeliveryResult::new(DeliveryMethod::Email);
-        result.successful_recipients.push("test1@example.com".to_string());
-        result.failed_recipients.push(("test2@example.com".to_string(), "Failed".to_string()));
+        result
+            .successful_recipients
+            .push("test1@example.com".to_string());
+        result
+            .failed_recipients
+            .push(("test2@example.com".to_string(), "Failed".to_string()));
 
         assert!(!result.is_success());
         assert!(result.is_partial_success());

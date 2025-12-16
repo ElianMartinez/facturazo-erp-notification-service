@@ -58,11 +58,26 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 // ERP Reports generation
                 .service(
                     web::scope("/reports")
-                        .route("/generate/sync", web::post().to(erp_report_handler::generate_erp_report_sync))
-                        .route("/generate/stream", web::post().to(erp_report_handler::generate_erp_report_stream))
-                        .route("/generate/async", web::post().to(erp_report_handler::generate_erp_report_async))
-                        .route("/{id}/status", web::get().to(erp_report_handler::get_report_status))
-                        .route("/{id}/download", web::get().to(erp_report_handler::download_report)),
+                        .route(
+                            "/generate/sync",
+                            web::post().to(erp_report_handler::generate_erp_report_sync),
+                        )
+                        .route(
+                            "/generate/stream",
+                            web::post().to(erp_report_handler::generate_erp_report_stream),
+                        )
+                        .route(
+                            "/generate/async",
+                            web::post().to(erp_report_handler::generate_erp_report_async),
+                        )
+                        .route(
+                            "/{id}/status",
+                            web::get().to(erp_report_handler::get_report_status),
+                        )
+                        .route(
+                            "/{id}/download",
+                            web::get().to(erp_report_handler::download_report),
+                        ),
                 ),
         );
 }

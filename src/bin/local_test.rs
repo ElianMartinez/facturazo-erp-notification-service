@@ -21,9 +21,9 @@ use rdkafka::config::ClientConfig;
 // ERP Report types
 use pdf_services::templates::{
     AgingBucket, ColumnAlign, ColumnDefinition, ColumnType, DataStructureType, DateRange,
-    DeliveryMethod, DeliveryOptions, EmailDelivery, WhatsAppDelivery,
-    ErpReportPayload, GroupingConfig, OutputFormat, OutputOptions, PageMargins, PageOrientation,
-    PageSize, ReportDataSet, ReportGroup, ReportInfo, ReportMetadata, TypstTemplate,
+    DeliveryMethod, DeliveryOptions, EmailDelivery, ErpReportPayload, GroupingConfig, OutputFormat,
+    OutputOptions, PageMargins, PageOrientation, PageSize, ReportDataSet, ReportGroup, ReportInfo,
+    ReportMetadata, TypstTemplate, WhatsAppDelivery,
 };
 use std::collections::HashMap;
 
@@ -223,17 +223,27 @@ async fn main() -> Result<()> {
         Commands::Health => check_health().await?,
         Commands::Kafka { action } => handle_kafka(action).await?,
         Commands::Generate { doc_type } => test_generation(&doc_type).await?,
-        Commands::ErpReport { variant, orientation, records, format } => {
-            test_erp_report(&variant, &orientation, records, &format).await?
-        }
+        Commands::ErpReport {
+            variant,
+            orientation,
+            records,
+            format,
+        } => test_erp_report(&variant, &orientation, records, &format).await?,
         Commands::Http { url } => test_http(&url).await?,
         Commands::Whatsapp { action } => handle_whatsapp(action).await?,
-        Commands::SendReportEmail { variant, format, records, email, subject } => {
-            send_report_via_email(&variant, &format, records, &email, subject).await?
-        }
-        Commands::SendReportWhatsapp { variant, format, records, phone } => {
-            send_report_via_whatsapp(&variant, &format, records, &phone).await?
-        }
+        Commands::SendReportEmail {
+            variant,
+            format,
+            records,
+            email,
+            subject,
+        } => send_report_via_email(&variant, &format, records, &email, subject).await?,
+        Commands::SendReportWhatsapp {
+            variant,
+            format,
+            records,
+            phone,
+        } => send_report_via_whatsapp(&variant, &format, records, &phone).await?,
     }
 
     Ok(())
@@ -527,10 +537,15 @@ This is a test document generated locally.
     Ok(())
 }
 
-async fn test_erp_report(variant: &str, orientation: &str, records: i32, format: &str) -> Result<()> {
+async fn test_erp_report(
+    variant: &str,
+    orientation: &str,
+    records: i32,
+    format: &str,
+) -> Result<()> {
     use pdf_services::infrastructure::generators::typst_generator::TypstGenerator;
-    use pdf_services::infrastructure::generators::ErpReportExcelGenerator;
     use pdf_services::infrastructure::generators::ErpReportCsvGenerator;
+    use pdf_services::infrastructure::generators::ErpReportExcelGenerator;
     use pdf_services::templates::templates::ErpReportTemplate;
 
     println!("\n📊 Testing ERP Report Generation\n{}", "=".repeat(50));
@@ -582,7 +597,11 @@ async fn test_erp_report(variant: &str, orientation: &str, records: i32, format:
                     std::fs::write(&output_path, &bytes)?;
                     println!("\n✅ PDF generated successfully!");
                     println!("   Output: {}", output_path);
-                    println!("   Size: {} bytes ({:.2} KB)", bytes.len(), bytes.len() as f64 / 1024.0);
+                    println!(
+                        "   Size: {} bytes ({:.2} KB)",
+                        bytes.len(),
+                        bytes.len() as f64 / 1024.0
+                    );
                 }
                 Err(e) => {
                     println!("\n❌ PDF generation failed: {}", e);
@@ -601,7 +620,11 @@ async fn test_erp_report(variant: &str, orientation: &str, records: i32, format:
                     std::fs::write(&output_path, &bytes)?;
                     println!("\n✅ Excel generated successfully!");
                     println!("   Output: {}", output_path);
-                    println!("   Size: {} bytes ({:.2} KB)", bytes.len(), bytes.len() as f64 / 1024.0);
+                    println!(
+                        "   Size: {} bytes ({:.2} KB)",
+                        bytes.len(),
+                        bytes.len() as f64 / 1024.0
+                    );
                 }
                 Err(e) => {
                     println!("\n❌ Excel generation failed: {}", e);
@@ -619,7 +642,11 @@ async fn test_erp_report(variant: &str, orientation: &str, records: i32, format:
                     std::fs::write(&output_path, &bytes)?;
                     println!("\n✅ CSV generated successfully!");
                     println!("   Output: {}", output_path);
-                    println!("   Size: {} bytes ({:.2} KB)", bytes.len(), bytes.len() as f64 / 1024.0);
+                    println!(
+                        "   Size: {} bytes ({:.2} KB)",
+                        bytes.len(),
+                        bytes.len() as f64 / 1024.0
+                    );
 
                     // Preview first few lines
                     let content = String::from_utf8_lossy(&bytes);
@@ -643,7 +670,6 @@ async fn test_erp_report(variant: &str, orientation: &str, records: i32, format:
 }
 
 fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayload {
-
     // Generate sample rows
     let mut rows: Vec<HashMap<String, serde_json::Value>> = Vec::new();
     let ncf_types = vec![
@@ -668,11 +694,26 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
         total_records += 1;
 
         let mut row = HashMap::new();
-        row.insert("invoiceDate".to_string(), serde_json::json!(format!("2025-12-{:02}", (i % 28) + 1)));
-        row.insert("encf".to_string(), serde_json::json!(format!("{}00000{:04}", ncf_type, i + 1)));
-        row.insert("customerRnc".to_string(), serde_json::json!(format!("1010{:05}", i)));
-        row.insert("customerName".to_string(), serde_json::json!(format!("Cliente {} S.R.L.", i + 1)));
-        row.insert("tipoVenta".to_string(), serde_json::json!(if i % 3 == 0 { "CREDITO" } else { "CONTADO" }));
+        row.insert(
+            "invoiceDate".to_string(),
+            serde_json::json!(format!("2025-12-{:02}", (i % 28) + 1)),
+        );
+        row.insert(
+            "encf".to_string(),
+            serde_json::json!(format!("{}00000{:04}", ncf_type, i + 1)),
+        );
+        row.insert(
+            "customerRnc".to_string(),
+            serde_json::json!(format!("1010{:05}", i)),
+        );
+        row.insert(
+            "customerName".to_string(),
+            serde_json::json!(format!("Cliente {} S.R.L.", i + 1)),
+        );
+        row.insert(
+            "tipoVenta".to_string(),
+            serde_json::json!(if i % 3 == 0 { "CREDITO" } else { "CONTADO" }),
+        );
         row.insert("total".to_string(), serde_json::json!(amount + itbis));
         row.insert("totalTax".to_string(), serde_json::json!(itbis));
         row.insert("itbis18".to_string(), serde_json::json!(itbis));
@@ -680,39 +721,59 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
         row.insert("exemptAmount".to_string(), serde_json::json!(0.0));
         row.insert("ncfType".to_string(), serde_json::json!(ncf_type));
         row.insert("ncfTypeName".to_string(), serde_json::json!(ncf_name));
-        row.insert("section".to_string(), serde_json::json!(if *ncf_type == "E34" { "DEVOLUCIONES" } else { "VENTAS" }));
+        row.insert(
+            "section".to_string(),
+            serde_json::json!(if *ncf_type == "E34" {
+                "DEVOLUCIONES"
+            } else {
+                "VENTAS"
+            }),
+        );
         rows.push(row);
     }
 
     grand_total.insert("recordCount".to_string(), serde_json::json!(total_records));
-    grand_total.insert("total".to_string(), serde_json::json!(total_amount + total_itbis));
+    grand_total.insert(
+        "total".to_string(),
+        serde_json::json!(total_amount + total_itbis),
+    );
     grand_total.insert("subtotal".to_string(), serde_json::json!(total_amount));
     grand_total.insert("totalItbis".to_string(), serde_json::json!(total_itbis));
     grand_total.insert("itbis18".to_string(), serde_json::json!(total_itbis));
 
     // Group rows by section
-    let mut ventas_rows: Vec<HashMap<String, serde_json::Value>> = rows.iter()
+    let mut ventas_rows: Vec<HashMap<String, serde_json::Value>> = rows
+        .iter()
         .filter(|r| r.get("section").and_then(|v| v.as_str()) != Some("DEVOLUCIONES"))
         .cloned()
         .collect();
-    let devoluciones_rows: Vec<HashMap<String, serde_json::Value>> = rows.iter()
+    let devoluciones_rows: Vec<HashMap<String, serde_json::Value>> = rows
+        .iter()
         .filter(|r| r.get("section").and_then(|v| v.as_str()) == Some("DEVOLUCIONES"))
         .cloned()
         .collect();
 
     let mut ventas_subtotal = HashMap::new();
-    let ventas_total: f64 = ventas_rows.iter()
+    let ventas_total: f64 = ventas_rows
+        .iter()
         .filter_map(|r| r.get("total").and_then(|v| v.as_f64()))
         .sum();
     ventas_subtotal.insert("total".to_string(), serde_json::json!(ventas_total));
-    ventas_subtotal.insert("recordCount".to_string(), serde_json::json!(ventas_rows.len()));
+    ventas_subtotal.insert(
+        "recordCount".to_string(),
+        serde_json::json!(ventas_rows.len()),
+    );
 
     let mut devoluciones_subtotal = HashMap::new();
-    let devoluciones_total: f64 = devoluciones_rows.iter()
+    let devoluciones_total: f64 = devoluciones_rows
+        .iter()
         .filter_map(|r| r.get("total").and_then(|v| v.as_f64()))
         .sum();
     devoluciones_subtotal.insert("total".to_string(), serde_json::json!(devoluciones_total));
-    devoluciones_subtotal.insert("recordCount".to_string(), serde_json::json!(devoluciones_rows.len()));
+    devoluciones_subtotal.insert(
+        "recordCount".to_string(),
+        serde_json::json!(devoluciones_rows.len()),
+    );
 
     let groups = vec![
         ReportGroup {
@@ -844,7 +905,11 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                 levels: None,
             }),
             show_grand_total: true,
-            grand_total_fields: vec!["total".to_string(), "totalTax".to_string(), "recordCount".to_string()],
+            grand_total_fields: vec![
+                "total".to_string(),
+                "totalTax".to_string(),
+                "recordCount".to_string(),
+            ],
             has_running_balance: false,
             show_opening_balance: false,
             aging_buckets: None,
@@ -885,7 +950,6 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
 }
 
 fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload {
-
     let mut rows: Vec<HashMap<String, serde_json::Value>> = Vec::new();
     let mut total_balance = 0.0f64;
 
@@ -894,17 +958,47 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
         total_balance += balance;
 
         let mut row = HashMap::new();
-        row.insert("clientCode".to_string(), serde_json::json!(format!("CLI-{:04}", i + 1)));
-        row.insert("clientName".to_string(), serde_json::json!(format!("Empresa {} S.R.L.", i + 1)));
-        row.insert("documentNumber".to_string(), serde_json::json!(format!("FAC-{:06}", i + 1)));
-        row.insert("documentDate".to_string(), serde_json::json!(format!("2025-11-{:02}", (i % 28) + 1)));
-        row.insert("dueDate".to_string(), serde_json::json!(format!("2025-12-{:02}", (i % 28) + 1)));
-        row.insert("originalAmount".to_string(), serde_json::json!(balance * 1.2));
+        row.insert(
+            "clientCode".to_string(),
+            serde_json::json!(format!("CLI-{:04}", i + 1)),
+        );
+        row.insert(
+            "clientName".to_string(),
+            serde_json::json!(format!("Empresa {} S.R.L.", i + 1)),
+        );
+        row.insert(
+            "documentNumber".to_string(),
+            serde_json::json!(format!("FAC-{:06}", i + 1)),
+        );
+        row.insert(
+            "documentDate".to_string(),
+            serde_json::json!(format!("2025-11-{:02}", (i % 28) + 1)),
+        );
+        row.insert(
+            "dueDate".to_string(),
+            serde_json::json!(format!("2025-12-{:02}", (i % 28) + 1)),
+        );
+        row.insert(
+            "originalAmount".to_string(),
+            serde_json::json!(balance * 1.2),
+        );
         row.insert("balance".to_string(), serde_json::json!(balance));
-        row.insert("current".to_string(), serde_json::json!(if i % 4 == 0 { balance } else { 0.0 }));
-        row.insert("days30".to_string(), serde_json::json!(if i % 4 == 1 { balance } else { 0.0 }));
-        row.insert("days60".to_string(), serde_json::json!(if i % 4 == 2 { balance } else { 0.0 }));
-        row.insert("days90".to_string(), serde_json::json!(if i % 4 == 3 { balance } else { 0.0 }));
+        row.insert(
+            "current".to_string(),
+            serde_json::json!(if i % 4 == 0 { balance } else { 0.0 }),
+        );
+        row.insert(
+            "days30".to_string(),
+            serde_json::json!(if i % 4 == 1 { balance } else { 0.0 }),
+        );
+        row.insert(
+            "days60".to_string(),
+            serde_json::json!(if i % 4 == 2 { balance } else { 0.0 }),
+        );
+        row.insert(
+            "days90".to_string(),
+            serde_json::json!(if i % 4 == 3 { balance } else { 0.0 }),
+        );
         rows.push(row);
     }
 
@@ -1029,14 +1123,36 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
             ],
             grouping: None,
             show_grand_total: true,
-            grand_total_fields: vec!["balance".to_string(), "current".to_string(), "days30".to_string(), "days60".to_string(), "days90".to_string()],
+            grand_total_fields: vec![
+                "balance".to_string(),
+                "current".to_string(),
+                "days30".to_string(),
+                "days60".to_string(),
+                "days90".to_string(),
+            ],
             has_running_balance: false,
             show_opening_balance: false,
             aging_buckets: Some(vec![
-                AgingBucket { name: "Corriente".to_string(), days_from: 0, days_to: Some(0) },
-                AgingBucket { name: "1-30 dias".to_string(), days_from: 1, days_to: Some(30) },
-                AgingBucket { name: "31-60 dias".to_string(), days_from: 31, days_to: Some(60) },
-                AgingBucket { name: "61+ dias".to_string(), days_from: 61, days_to: None },
+                AgingBucket {
+                    name: "Corriente".to_string(),
+                    days_from: 0,
+                    days_to: Some(0),
+                },
+                AgingBucket {
+                    name: "1-30 dias".to_string(),
+                    days_from: 1,
+                    days_to: Some(30),
+                },
+                AgingBucket {
+                    name: "31-60 dias".to_string(),
+                    days_from: 31,
+                    days_to: Some(60),
+                },
+                AgingBucket {
+                    name: "61+ dias".to_string(),
+                    days_from: 61,
+                    days_to: None,
+                },
             ]),
         },
         data: ReportDataSet {
@@ -1075,15 +1191,23 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
 }
 
 fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpReportPayload {
-
     let mut rows: Vec<HashMap<String, serde_json::Value>> = Vec::new();
 
     for i in 0..records {
         let mut row = HashMap::new();
         row.insert("id".to_string(), serde_json::json!(i + 1));
-        row.insert("name".to_string(), serde_json::json!(format!("Item {}", i + 1)));
-        row.insert("value".to_string(), serde_json::json!(100.0 + (i as f64 * 10.5)));
-        row.insert("date".to_string(), serde_json::json!(format!("2025-12-{:02}", (i % 28) + 1)));
+        row.insert(
+            "name".to_string(),
+            serde_json::json!(format!("Item {}", i + 1)),
+        );
+        row.insert(
+            "value".to_string(),
+            serde_json::json!(100.0 + (i as f64 * 10.5)),
+        );
+        row.insert(
+            "date".to_string(),
+            serde_json::json!(format!("2025-12-{:02}", (i % 28) + 1)),
+        );
         rows.push(row);
     }
 
@@ -1417,10 +1541,7 @@ async fn send_report_via_email(
         DeliveryMethod, DeliveryOptions, EmailDelivery,
     };
 
-    println!(
-        "\n📧 Send ERP Report via Email\n{}",
-        "=".repeat(50)
-    );
+    println!("\n📧 Send ERP Report via Email\n{}", "=".repeat(50));
     println!("   Variant: {}", variant);
     println!("   Format: {}", format.to_uppercase());
     println!("   Records: {}", records);
@@ -1463,7 +1584,9 @@ async fn send_report_via_email(
         email: Some(EmailDelivery {
             recipients: vec![email.to_string()],
             subject,
-            message: Some("Este reporte fue generado automáticamente por Facturazo ERP.".to_string()),
+            message: Some(
+                "Este reporte fue generado automáticamente por Facturazo ERP.".to_string(),
+            ),
         }),
         whatsapp: None,
     });
@@ -1522,10 +1645,7 @@ async fn send_report_via_whatsapp(
         DeliveryMethod, DeliveryOptions, WhatsAppDelivery,
     };
 
-    println!(
-        "\n📱 Send ERP Report via WhatsApp\n{}",
-        "=".repeat(50)
-    );
+    println!("\n📱 Send ERP Report via WhatsApp\n{}", "=".repeat(50));
     println!("   Variant: {}", variant);
     println!("   Format: {}", format.to_uppercase());
     println!("   Records: {}", records);

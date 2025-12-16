@@ -146,8 +146,7 @@ pub async fn generate_erp_report_sync(
             } else {
                 // Return bytes inline (base64 encoded)
                 use base64::Engine;
-                let base64_content =
-                    base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let base64_content = base64::engine::general_purpose::STANDARD.encode(&bytes);
 
                 Ok(HttpResponse::Ok().json(json!({
                     "success": true,
@@ -248,7 +247,10 @@ pub async fn generate_erp_report_stream(
             // Return binary stream directly
             Ok(HttpResponse::Ok()
                 .content_type(mime_type)
-                .append_header(("Content-Disposition", format!("attachment; filename=\"{}\"", filename)))
+                .append_header((
+                    "Content-Disposition",
+                    format!("attachment; filename=\"{}\"", filename),
+                ))
                 .append_header(("Content-Length", bytes.len().to_string()))
                 .append_header(("X-Report-Id", report_id))
                 .append_header(("X-Processing-Time-Ms", processing_time_ms.to_string()))
@@ -561,7 +563,9 @@ async fn deliver_report(
             // Set file_name in output options if possible
             delivery_payload.output.file_name = Some(file_name);
 
-            notifier.deliver_report(&delivery_payload, bytes.to_vec()).await?;
+            notifier
+                .deliver_report(&delivery_payload, bytes.to_vec())
+                .await?;
         }
         _ => {} // Download/View don't need delivery
     }

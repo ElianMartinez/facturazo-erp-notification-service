@@ -7,8 +7,8 @@ use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook, Worksh
 use std::collections::HashMap;
 
 use crate::templates::{
-    ColumnAlign, ColumnDefinition, ColumnType, DataStructureType, ErpReportPayload, ReportGroup,
-    ReportCompanyInfo,
+    ColumnAlign, ColumnDefinition, ColumnType, DataStructureType, ErpReportPayload,
+    ReportCompanyInfo, ReportGroup,
 };
 
 /// Excel generator for ERP reports
@@ -78,7 +78,10 @@ impl ErpReportExcelGenerator {
         Self::auto_fit_columns(worksheet, &payload.metadata.columns)?;
 
         // Freeze header rows
-        worksheet.set_freeze_panes(current_row.saturating_sub(payload.data.total_records as u32), 0)?;
+        worksheet.set_freeze_panes(
+            current_row.saturating_sub(payload.data.total_records as u32),
+            0,
+        )?;
 
         Ok(workbook.save_to_buffer()?)
     }
@@ -231,7 +234,10 @@ impl ErpReportExcelGenerator {
         let mut filters = Vec::new();
 
         if let Some(ref date_range) = payload.report.date_range {
-            filters.push(format!("Desde: {} Hasta: {}", date_range.from, date_range.to));
+            filters.push(format!(
+                "Desde: {} Hasta: {}",
+                date_range.from, date_range.to
+            ));
         }
 
         if let Some(ref as_of_date) = payload.report.as_of_date {
@@ -591,7 +597,12 @@ impl ErpReportExcelGenerator {
             let col = col_idx as u16;
             if let Some(value) = subtotal.get(&column.key) {
                 if let Some(num) = value.as_f64() {
-                    worksheet.write_number_with_format(row, col, num, &formats.subtotal_currency)?;
+                    worksheet.write_number_with_format(
+                        row,
+                        col,
+                        num,
+                        &formats.subtotal_currency,
+                    )?;
                 }
             } else {
                 worksheet.write_string_with_format(row, col, "", &formats.subtotal)?;
@@ -708,7 +719,10 @@ mod tests {
         for i in 0..5 {
             let mut row = HashMap::new();
             row.insert("name".to_string(), serde_json::json!(format!("Item {}", i)));
-            row.insert("amount".to_string(), serde_json::json!(100.0 * (i + 1) as f64));
+            row.insert(
+                "amount".to_string(),
+                serde_json::json!(100.0 * (i + 1) as f64),
+            );
             rows.push(row);
         }
 
