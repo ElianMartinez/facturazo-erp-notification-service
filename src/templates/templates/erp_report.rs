@@ -150,22 +150,23 @@ impl ErpReportTemplate {
         columns.iter().filter(|c| !c.hidden).collect()
     }
 
-    /// Generate column widths string for Typst table
+    /// Generate column widths using fractional units (fr) for proportional distribution
+    /// This ensures the table always fits within the page width
     fn generate_column_widths(&self, columns: &[&ColumnDefinition]) -> String {
         columns
             .iter()
             .map(|col| {
-                if let Some(width) = col.width {
-                    format!("{}pt", width)
-                } else {
-                    "auto".to_string()
-                }
+                // Use width as weight for proportional distribution
+                // Default weight of 100 if not specified
+                let weight = col.width.unwrap_or(100);
+                format!("{}fr", weight)
             })
             .collect::<Vec<_>>()
             .join(", ")
     }
 
     /// Generate table header row
+    /// Uses em units so sizes scale with base font size
     fn generate_header_row(&self, columns: &[&ColumnDefinition]) -> String {
         columns
             .iter()
@@ -176,7 +177,7 @@ impl ErpReportTemplate {
                     ColumnAlign::Right => "right",
                 };
                 format!(
-                    "table.cell(align: {})[#text(weight: \"bold\", size: 8pt)[{}]]",
+                    "table.cell(align: {})[#text(weight: \"bold\", size: 0.9em)[{}]]",
                     align,
                     utils::escape_typst(&col.label)
                 )
@@ -186,6 +187,7 @@ impl ErpReportTemplate {
     }
 
     /// Generate a data row
+    /// Uses em units so sizes scale with base font size
     fn generate_data_row(
         &self,
         row: &HashMap<String, serde_json::Value>,
@@ -222,7 +224,7 @@ impl ErpReportTemplate {
                 };
 
                 format!(
-                    "table.cell(align: {})[#text(weight: {}, size: 7pt{})[{}]]",
+                    "table.cell(align: {})[#text(weight: {}, size: 0.8em{})[{}]]",
                     align, weight, color, formatted
                 )
             })
@@ -243,7 +245,7 @@ impl ErpReportTemplate {
         for col in columns {
             if first_cell {
                 cells.push(format!(
-                    "table.cell(align: left)[#text(weight: \"bold\", size: 7pt)[{}]]",
+                    "table.cell(align: left)[#text(weight: \"bold\", size: 0.8em)[{}]]",
                     label
                 ));
                 first_cell = false;
@@ -258,7 +260,7 @@ impl ErpReportTemplate {
                 };
 
                 cells.push(format!(
-                    "table.cell(align: {})[#text(weight: \"bold\", size: 7pt)[{}]]",
+                    "table.cell(align: {})[#text(weight: \"bold\", size: 0.8em)[{}]]",
                     align, formatted
                 ));
             }
@@ -324,7 +326,7 @@ impl ErpReportTemplate {
         for group in groups {
             // Group header
             all_rows.push(format!(
-                "table.cell(colspan: {}, fill: rgb(230, 240, 250))[#text(weight: \"bold\", size: 8pt)[{} ({} registros)]]",
+                "table.cell(colspan: {}, fill: rgb(230, 240, 250))[#text(weight: \"bold\", size: 0.9em)[{} ({} registros)]]",
                 columns.len(),
                 utils::escape_typst(&group.label),
                 group.record_count
@@ -381,7 +383,7 @@ impl ErpReportTemplate {
         for group in groups {
             // Level 0 group header
             all_rows.push(format!(
-                "table.cell(colspan: {}, fill: rgb(200, 220, 240))[#text(weight: \"bold\", size: 9pt)[{}]]",
+                "table.cell(colspan: {}, fill: rgb(200, 220, 240))[#text(weight: \"bold\", size: 1em)[{}]]",
                 columns.len(),
                 utils::escape_typst(&group.label)
             ));
@@ -391,7 +393,7 @@ impl ErpReportTemplate {
                 for sub_group in sub_groups {
                     // Level 1 group header
                     all_rows.push(format!(
-                        "table.cell(colspan: {}, fill: rgb(235, 245, 255))[#h(10pt)#text(weight: \"semibold\", size: 8pt)[{} ({})]]",
+                        "table.cell(colspan: {}, fill: rgb(235, 245, 255))[#h(1em)#text(weight: \"semibold\", size: 0.9em)[{} ({})]]",
                         columns.len(),
                         utils::escape_typst(&sub_group.label),
                         sub_group.record_count
@@ -541,14 +543,14 @@ impl ErpReportTemplate {
 
         format!(
             r#"
-#v(12pt)
-#rect(width: 100%, fill: rgb(240, 245, 250), stroke: 1.5pt + rgb(24, 144, 255), radius: 4pt, inset: 10pt)[
+#v(1.2em)
+#rect(width: 100%, fill: rgb(240, 245, 250), stroke: 1.5pt + rgb(24, 144, 255), radius: 4pt, inset: 1em)[
   #grid(columns: (auto, 1fr), gutter: 5pt,
-    [#text(weight: "bold", size: 11pt, fill: rgb(24, 144, 255))[TOTAL GENERAL]],
-    [#text(size: 9pt, fill: gray)[({} registros)]],
+    [#text(weight: "bold", size: 1.2em, fill: rgb(24, 144, 255))[TOTAL GENERAL]],
+    [#text(size: 1em, fill: gray)[({} registros)]],
   )
-  #v(8pt)
-  #grid(columns: (150pt, auto), gutter: 4pt,
+  #v(0.8em)
+  #grid(columns: (15em, auto), gutter: 4pt,
     {}
   )
 ]"#,
@@ -560,9 +562,9 @@ impl ErpReportTemplate {
     /// Generate empty data message
     fn generate_empty_message(&self) -> String {
         r#"#align(center)[
-  #v(30pt)
-  #text(size: 12pt, fill: gray)[No hay datos para mostrar]
-  #v(30pt)
+  #v(3em)
+  #text(size: 1.3em, fill: gray)[No hay datos para mostrar]
+  #v(3em)
 ]"#
         .to_string()
     }
@@ -805,10 +807,10 @@ impl TypstTemplate for ErpReportTemplate {
 // Footer
 #v(1fr)
 #line(length: 100%, stroke: 0.5pt + rgb(200, 200, 200))
-#v(3pt)
+#v(0.3em)
 #grid(columns: (1fr, 1fr), gutter: 0pt,
-  [#text(size: 7pt, fill: gray)[Generado: {generated_at}]],
-  [#align(right)[#text(size: 7pt, fill: gray)[Pagina #context counter(page).display() de #context counter(page).final().at(0)]]]
+  [#text(size: 0.8em, fill: gray)[Generado: {generated_at}]],
+  [#align(right)[#text(size: 0.8em, fill: gray)[Pagina #context counter(page).display() de #context counter(page).final().at(0)]]]
 )"##,
             title = utils::escape_typst(&payload.report.title),
             page_config = page_config,

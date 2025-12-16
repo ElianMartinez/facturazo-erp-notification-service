@@ -60,6 +60,18 @@ pub async fn generate_erp_report_sync(
         payload.data.total_records
     );
 
+    // Debug: Log output options to verify deserialization
+    tracing::info!(
+        "Output options: page_size={:?}, orientation={:?}, scale={}, margins={:?}, include_header={}, include_footer={}, show_logo={}",
+        payload.output.page_size,
+        payload.output.orientation,
+        payload.output.scale,
+        payload.output.margins,
+        payload.output.include_header,
+        payload.output.include_footer,
+        payload.output.show_logo
+    );
+
     // Generate based on output format
     let result = match payload.output.format {
         OutputFormat::Pdf => generate_pdf(&payload).await,
@@ -209,6 +221,15 @@ pub async fn generate_erp_report_stream(
         payload.report.variant,
         payload.output.format,
         payload.data.total_records
+    );
+
+    // Debug: Log output options to verify deserialization
+    tracing::info!(
+        "Stream output options: page_size={:?}, orientation={:?}, scale={}, margins={:?}",
+        payload.output.page_size,
+        payload.output.orientation,
+        payload.output.scale,
+        payload.output.margins
     );
 
     // Generate based on output format
