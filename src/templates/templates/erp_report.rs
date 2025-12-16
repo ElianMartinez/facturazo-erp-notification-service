@@ -292,9 +292,12 @@ impl ErpReportTemplate {
                             if formatted == "0.00" || formatted == "0" {
                                 return None;
                             }
-                            Some(format!("[{}:], [#text(weight: \"bold\")[{}]]", col.label, formatted))
+                            Some(format!(
+                                "[{}:], [#text(weight: \"bold\")[{}]]",
+                                col.label, formatted
+                            ))
                         }
-                        _ => None
+                        _ => None,
                     }
                 })
             })
@@ -392,11 +395,8 @@ impl ErpReportTemplate {
             // Subtotal - use full summary to show all values
             if show_subtotals {
                 if let Some(ref subtotal) = group.subtotal {
-                    let summary = self.generate_subtotal_summary(
-                        subtotal,
-                        all_columns,
-                        &subtotal_label
-                    );
+                    let summary =
+                        self.generate_subtotal_summary(subtotal, all_columns, &subtotal_label);
                     if !summary.is_empty() {
                         all_rows.push(summary);
                     }
@@ -468,7 +468,7 @@ impl ErpReportTemplate {
                             let summary = self.generate_subtotal_summary(
                                 subtotal,
                                 all_columns,
-                                &format!("Subtotal {}", &sub_group.label)
+                                &format!("Subtotal {}", &sub_group.label),
                             );
                             if !summary.is_empty() {
                                 all_rows.push(summary);
@@ -489,7 +489,7 @@ impl ErpReportTemplate {
                     let summary = self.generate_subtotal_summary(
                         subtotal,
                         all_columns,
-                        &format!("Total {}", &group.label)
+                        &format!("Total {}", &group.label),
                     );
                     if !summary.is_empty() {
                         all_rows.push(summary);
@@ -596,9 +596,12 @@ impl ErpReportTemplate {
                     match col.column_type {
                         ColumnType::Currency | ColumnType::Decimal | ColumnType::Integer => {
                             let formatted = self.format_value(value, col);
-                            Some(format!("[{}:], [#text(weight: \"bold\")[{}]]", col.label, formatted))
+                            Some(format!(
+                                "[{}:], [#text(weight: \"bold\")[{}]]",
+                                col.label, formatted
+                            ))
                         }
-                        _ => None
+                        _ => None,
                     }
                 })
             })
@@ -814,7 +817,7 @@ impl TypstTemplate for ErpReportTemplate {
                         groups,
                         &visible_columns,
                         &payload.metadata.grouping,
-                        &payload.metadata.columns,  // Pass ALL columns for subtotal summaries
+                        &payload.metadata.columns, // Pass ALL columns for subtotal summaries
                     )
                 } else {
                     self.generate_empty_message()
@@ -826,7 +829,7 @@ impl TypstTemplate for ErpReportTemplate {
                         groups,
                         &visible_columns,
                         &payload.metadata.grouping,
-                        &payload.metadata.columns,  // Pass ALL columns for subtotal summaries
+                        &payload.metadata.columns, // Pass ALL columns for subtotal summaries
                     )
                 } else {
                     self.generate_empty_message()
