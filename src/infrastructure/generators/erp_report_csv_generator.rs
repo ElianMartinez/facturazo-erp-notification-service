@@ -496,6 +496,7 @@ mod tests {
                         sortable: false,
                         highlight: None,
                         hidden: false,
+                        hide_in_print: false,
                     },
                     ColumnDefinition {
                         key: "amount".to_string(),
@@ -507,6 +508,7 @@ mod tests {
                         sortable: false,
                         highlight: None,
                         hidden: false,
+                        hide_in_print: false,
                     },
                 ],
                 grouping: None,
