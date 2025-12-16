@@ -592,7 +592,8 @@ mod tests {
         let result = generator.generate(&payload).await;
         assert!(result.is_ok());
 
-        let content = String::from_utf8_lossy(&result.unwrap());
+        let binding = result.unwrap();
+        let content = String::from_utf8_lossy(&binding);
         assert!(content.contains("\"Item with, comma and \"\"quotes\"\"\""));
     }
 }
