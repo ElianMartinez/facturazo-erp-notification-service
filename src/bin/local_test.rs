@@ -826,6 +826,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                     sortable: true,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "encf".to_string(),
@@ -837,6 +838,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "customerRnc".to_string(),
@@ -848,6 +850,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "customerName".to_string(),
@@ -859,6 +862,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "tipoVenta".to_string(),
@@ -870,6 +874,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "total".to_string(),
@@ -881,6 +886,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                     sortable: true,
                     highlight: Some("primary".to_string()),
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "totalTax".to_string(),
@@ -892,6 +898,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
             ],
             grouping: Some(GroupingConfig {
@@ -1031,6 +1038,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "clientName".to_string(),
@@ -1042,6 +1050,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: true,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "documentNumber".to_string(),
@@ -1053,6 +1062,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "dueDate".to_string(),
@@ -1064,6 +1074,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: true,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "balance".to_string(),
@@ -1075,6 +1086,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: true,
                     highlight: Some("primary".to_string()),
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "current".to_string(),
@@ -1086,6 +1098,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "days30".to_string(),
@@ -1097,6 +1110,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "days60".to_string(),
@@ -1108,6 +1122,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "days90".to_string(),
@@ -1119,6 +1134,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
                     sortable: false,
                     highlight: Some("danger".to_string()),
                     hidden: false,
+                    hide_in_print: false,
                 },
             ],
             grouping: None,
@@ -1239,6 +1255,7 @@ fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpR
                     sortable: false,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "name".to_string(),
@@ -1250,6 +1267,7 @@ fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpR
                     sortable: true,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "value".to_string(),
@@ -1261,6 +1279,7 @@ fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpR
                     sortable: true,
                     highlight: Some("primary".to_string()),
                     hidden: false,
+                    hide_in_print: false,
                 },
                 ColumnDefinition {
                     key: "date".to_string(),
@@ -1272,6 +1291,7 @@ fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpR
                     sortable: true,
                     highlight: None,
                     hidden: false,
+                    hide_in_print: false,
                 },
             ],
             grouping: None,
