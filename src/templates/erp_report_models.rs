@@ -251,6 +251,11 @@ pub struct ColumnDefinition {
     /// Whether column is hidden
     #[serde(default)]
     pub hidden: bool,
+
+    /// Whether column should be hidden when printing (PDF export)
+    /// When true, column appears in preview but not in PDF
+    #[serde(alias = "hide_in_print", default)]
+    pub hide_in_print: bool,
 }
 
 /// Column data types

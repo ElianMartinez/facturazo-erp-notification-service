@@ -142,12 +142,12 @@ impl ErpReportTemplate {
         date
     }
 
-    /// Get visible columns (non-hidden)
+    /// Get visible columns for PDF (excludes hidden and hide_in_print columns)
     fn get_visible_columns<'a>(
         &self,
         columns: &'a [ColumnDefinition],
     ) -> Vec<&'a ColumnDefinition> {
-        columns.iter().filter(|c| !c.hidden).collect()
+        columns.iter().filter(|c| !c.hidden && !c.hide_in_print).collect()
     }
 
     /// Generate column widths using fractional units (fr) for proportional distribution
