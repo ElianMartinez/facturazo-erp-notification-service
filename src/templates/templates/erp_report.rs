@@ -235,7 +235,7 @@ impl ErpReportTemplate {
             .join(",\n    ")
     }
 
-    /// Generate subtotal row
+    /// Generate subtotal row for table (matches visible columns)
     fn generate_subtotal_row(
         &self,
         subtotal: &HashMap<String, serde_json::Value>,
@@ -272,6 +272,53 @@ impl ErpReportTemplate {
         cells.join(",\n    ")
     }
 
+    /// Generate a complete subtotal summary showing ALL numeric values
+    /// Used to show totals for hidden columns in print mode
+    fn generate_subtotal_summary(
+        &self,
+        subtotal: &HashMap<String, serde_json::Value>,
+        all_columns: &[ColumnDefinition],
+        label: &str,
+    ) -> String {
+        let totals: Vec<String> = all_columns
+            .iter()
+            .filter_map(|col| {
+                subtotal.get(&col.key).and_then(|value| {
+                    // Only show numeric values
+                    match col.column_type {
+                        ColumnType::Currency | ColumnType::Decimal | ColumnType::Integer => {
+                            let formatted = self.format_value(value, col);
+                            // Skip zero values for cleaner display
+                            if formatted == "0.00" || formatted == "0" {
+                                return None;
+                            }
+                            Some(format!("[{}:], [#text(weight: \"bold\")[{}]]", col.label, formatted))
+                        }
+                        _ => None
+                    }
+                })
+            })
+            .collect();
+
+        if totals.is_empty() {
+            return String::new();
+        }
+
+        format!(
+            r#"table.cell(colspan: 999, fill: rgb(248, 250, 252), inset: 8pt)[
+    #grid(columns: (auto, 1fr), gutter: 3pt,
+      [#text(weight: "bold", size: 0.85em)[{}]],
+      [],
+    )
+    #grid(columns: (10em, auto), gutter: 3pt,
+      {}
+    )
+  ]"#,
+            utils::escape_typst(label),
+            totals.join(",\n      ")
+        )
+    }
+
     /// Generate flat data table
     fn generate_flat_table(
         &self,
@@ -306,11 +353,13 @@ impl ErpReportTemplate {
     }
 
     /// Generate grouped data table
+    /// Shows data in visible columns, but subtotals show ALL numeric values
     fn generate_grouped_table(
         &self,
         groups: &[ReportGroup],
         columns: &[&ColumnDefinition],
         grouping: &Option<GroupingConfig>,
+        all_columns: &[ColumnDefinition],
     ) -> String {
         if groups.is_empty() {
             return self.generate_empty_message();
@@ -340,13 +389,17 @@ impl ErpReportTemplate {
                 all_rows.push(self.generate_data_row(row, columns, false));
             }
 
-            // Subtotal row
+            // Subtotal - use full summary to show all values
             if show_subtotals {
                 if let Some(ref subtotal) = group.subtotal {
-                    all_rows.push(format!(
-                        "table.hline(stroke: 1pt + rgb(180, 180, 180)),\n    {}",
-                        self.generate_subtotal_row(subtotal, columns, &subtotal_label)
-                    ));
+                    let summary = self.generate_subtotal_summary(
+                        subtotal,
+                        all_columns,
+                        &subtotal_label
+                    );
+                    if !summary.is_empty() {
+                        all_rows.push(summary);
+                    }
                 }
             }
         }
@@ -367,11 +420,13 @@ impl ErpReportTemplate {
     }
 
     /// Generate hierarchical grouped data table
+    /// Shows data in visible columns, but subtotals show ALL numeric values
     fn generate_hierarchical_table(
         &self,
         groups: &[ReportGroup],
         columns: &[&ColumnDefinition],
         grouping: &Option<GroupingConfig>,
+        all_columns: &[ColumnDefinition],
     ) -> String {
         if groups.is_empty() {
             return self.generate_empty_message();
@@ -407,17 +462,17 @@ impl ErpReportTemplate {
                         all_rows.push(self.generate_data_row(row, columns, false));
                     }
 
-                    // Subgroup subtotal
+                    // Subgroup subtotal - use full summary to show all values
                     if show_subtotals {
                         if let Some(ref subtotal) = sub_group.subtotal {
-                            all_rows.push(format!(
-                                "table.hline(stroke: 0.5pt + rgb(200, 200, 200)),\n    {}",
-                                self.generate_subtotal_row(
-                                    subtotal,
-                                    columns,
-                                    &format!("Subtotal {}", &sub_group.label)
-                                )
-                            ));
+                            let summary = self.generate_subtotal_summary(
+                                subtotal,
+                                all_columns,
+                                &format!("Subtotal {}", &sub_group.label)
+                            );
+                            if !summary.is_empty() {
+                                all_rows.push(summary);
+                            }
                         }
                     }
                 }
@@ -428,17 +483,17 @@ impl ErpReportTemplate {
                 }
             }
 
-            // Group subtotal
+            // Group subtotal - use full summary to show all values
             if show_subtotals {
                 if let Some(ref subtotal) = group.subtotal {
-                    all_rows.push(format!(
-                        "table.hline(stroke: 1pt + rgb(180, 180, 180)),\n    {}",
-                        self.generate_subtotal_row(
-                            subtotal,
-                            columns,
-                            &format!("Total {}", &group.label)
-                        )
-                    ));
+                    let summary = self.generate_subtotal_summary(
+                        subtotal,
+                        all_columns,
+                        &format!("Total {}", &group.label)
+                    );
+                    if !summary.is_empty() {
+                        all_rows.push(summary);
+                    }
                 }
             }
         }
@@ -483,7 +538,8 @@ impl ErpReportTemplate {
         if let Some(ref rows) = data.rows {
             content.push_str(&self.generate_flat_table(rows, columns));
         } else if let Some(ref groups) = data.groups {
-            content.push_str(&self.generate_grouped_table(groups, columns, &None));
+            // Statement tables don't have subtotals, pass empty for all_columns
+            content.push_str(&self.generate_grouped_table(groups, columns, &None, &[]));
         }
 
         // Summary
@@ -524,23 +580,31 @@ impl ErpReportTemplate {
     }
 
     /// Generate grand total section
+    /// Shows ALL totals from the data, not just visible columns
     fn generate_grand_total(
         &self,
         grand_total: &HashMap<String, serde_json::Value>,
-        columns: &[&ColumnDefinition],
+        all_columns: &[ColumnDefinition],
         total_records: i32,
     ) -> String {
-        let visible_totals: Vec<String> = columns
+        // Use ALL columns (not just visible) to show complete totals
+        let all_totals: Vec<String> = all_columns
             .iter()
             .filter_map(|col| {
-                grand_total.get(&col.key).map(|value| {
-                    let formatted = self.format_value(value, col);
-                    format!("[{}:], [#text(weight: \"bold\")[{}]]", col.label, formatted)
+                grand_total.get(&col.key).and_then(|value| {
+                    // Only show numeric values (Currency, Decimal, Integer)
+                    match col.column_type {
+                        ColumnType::Currency | ColumnType::Decimal | ColumnType::Integer => {
+                            let formatted = self.format_value(value, col);
+                            Some(format!("[{}:], [#text(weight: \"bold\")[{}]]", col.label, formatted))
+                        }
+                        _ => None
+                    }
                 })
             })
             .collect();
 
-        if visible_totals.is_empty() {
+        if all_totals.is_empty() {
             return String::new();
         }
 
@@ -558,7 +622,7 @@ impl ErpReportTemplate {
   )
 ]"#,
             total_records,
-            visible_totals.join(",\n    ")
+            all_totals.join(",\n    ")
         )
     }
 
@@ -750,6 +814,7 @@ impl TypstTemplate for ErpReportTemplate {
                         groups,
                         &visible_columns,
                         &payload.metadata.grouping,
+                        &payload.metadata.columns,  // Pass ALL columns for subtotal summaries
                     )
                 } else {
                     self.generate_empty_message()
@@ -761,6 +826,7 @@ impl TypstTemplate for ErpReportTemplate {
                         groups,
                         &visible_columns,
                         &payload.metadata.grouping,
+                        &payload.metadata.columns,  // Pass ALL columns for subtotal summaries
                     )
                 } else {
                     self.generate_empty_message()
@@ -772,6 +838,7 @@ impl TypstTemplate for ErpReportTemplate {
         };
 
         // Generate grand total if enabled
+        // Use ALL columns (not just visible) to show complete totals
         let grand_total_content = if payload.metadata.show_grand_total {
             let totals = payload
                 .data
@@ -780,7 +847,7 @@ impl TypstTemplate for ErpReportTemplate {
                 .or(payload.data.totals.as_ref());
 
             if let Some(gt) = totals {
-                self.generate_grand_total(gt, &visible_columns, payload.data.total_records)
+                self.generate_grand_total(gt, &payload.metadata.columns, payload.data.total_records)
             } else {
                 String::new()
             }
