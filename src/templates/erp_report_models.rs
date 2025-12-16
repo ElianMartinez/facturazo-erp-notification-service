@@ -839,15 +839,32 @@ mod tests {
 
         // Verify output options are deserialized correctly
         assert_eq!(payload.output.format, OutputFormat::Pdf);
-        assert_eq!(payload.output.page_size, Some(PageSize::Letter), "page_size should be Letter");
-        assert_eq!(payload.output.orientation, Some(PageOrientation::Landscape), "orientation should be Landscape");
+        assert_eq!(
+            payload.output.page_size,
+            Some(PageSize::Letter),
+            "page_size should be Letter"
+        );
+        assert_eq!(
+            payload.output.orientation,
+            Some(PageOrientation::Landscape),
+            "orientation should be Landscape"
+        );
         assert_eq!(payload.output.scale, 85, "scale should be 85");
-        assert!(payload.output.margins.is_some(), "margins should be present");
+        assert!(
+            payload.output.margins.is_some(),
+            "margins should be present"
+        );
         let margins = payload.output.margins.as_ref().unwrap();
         assert_eq!(margins.top, 10.0);
         assert_eq!(margins.left, 5.0);
-        assert!(payload.output.include_header, "include_header should be true");
-        assert!(!payload.output.include_footer, "include_footer should be false");
+        assert!(
+            payload.output.include_header,
+            "include_header should be true"
+        );
+        assert!(
+            !payload.output.include_footer,
+            "include_footer should be false"
+        );
         assert!(payload.output.show_logo, "show_logo should be true");
     }
 }

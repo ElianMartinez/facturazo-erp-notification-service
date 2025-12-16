@@ -147,7 +147,10 @@ impl ErpReportTemplate {
         &self,
         columns: &'a [ColumnDefinition],
     ) -> Vec<&'a ColumnDefinition> {
-        columns.iter().filter(|c| !c.hidden && !c.hide_in_print).collect()
+        columns
+            .iter()
+            .filter(|c| !c.hidden && !c.hide_in_print)
+            .collect()
     }
 
     /// Generate column widths using fractional units (fr) for proportional distribution
