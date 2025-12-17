@@ -180,7 +180,7 @@ impl ErpReportTemplate {
                     ColumnAlign::Right => "right",
                 };
                 format!(
-                    "table.cell(align: {}, fill: rgb(71, 85, 105))[#text(weight: \"bold\", size: 0.75em, fill: white)[{}]]",
+                    "table.cell(align: {}, fill: rgb(51, 65, 85))[#text(size: 0.85em, fill: white)[#strong[{}]]]",
                     align,
                     utils::escape_typst(&col.label).to_uppercase()
                 )
@@ -245,7 +245,7 @@ impl ErpReportTemplate {
         for col in columns {
             if first_cell {
                 cells.push(format!(
-                    "table.cell(align: left)[#text(weight: \"bold\", size: 0.8em)[{}]]",
+                    "table.cell(align: left)[#text(size: 0.85em)[#strong[{}]]]",
                     label
                 ));
                 first_cell = false;
@@ -260,7 +260,7 @@ impl ErpReportTemplate {
                 };
 
                 cells.push(format!(
-                    "table.cell(align: {})[#text(weight: \"bold\", size: 0.8em)[{}]]",
+                    "table.cell(align: {})[#text(size: 0.85em)[#strong[{}]]]",
                     align, formatted
                 ));
             }
@@ -271,27 +271,44 @@ impl ErpReportTemplate {
 
     /// Generate subtotal row as a regular table row with values in columns
     /// Shows label in first column and values aligned with their respective columns
+    /// Level 0 = main category subtotal (stronger visual), Level 1+ = subcategory subtotal (lighter)
     fn generate_subtotal_row_inline(
         &self,
         subtotal: &HashMap<String, serde_json::Value>,
         visible_columns: &[&ColumnDefinition],
         _label: &str,
         record_count: Option<i32>,
+        level: u32,
     ) -> String {
         let mut cells = Vec::new();
         let mut is_first = true;
+
+        // Different styling based on hierarchy level
+        // Level 0 (main category): Stronger green color, bolder appearance
+        // Level 1+ (subcategory): Lighter styling
+        let (bg_color, text_color) = if level == 0 {
+            // Main category subtotal - strong green (like Excel's subtotal format)
+            ("rgb(198, 239, 206)", "rgb(0, 97, 0)")
+        } else {
+            // Subcategory subtotal - lighter green
+            ("rgb(226, 239, 218)", "rgb(56, 87, 35)")
+        };
 
         for col in visible_columns {
             if is_first {
                 // First column: show label with record count
                 let label_text = if let Some(count) = record_count {
-                    format!("Registros: {}            Sub-Total", count)
+                    if level == 0 {
+                        format!("Registros: {}            Sub-Total", count)
+                    } else {
+                        format!("({}) Sub-Total", count)
+                    }
                 } else {
                     "Sub-Total".to_string()
                 };
                 cells.push(format!(
-                    "table.cell(align: left)[#text(weight: \"bold\", size: 0.75em, fill: rgb(59, 130, 246))[{}]]",
-                    label_text
+                    "table.cell(align: left, fill: {})[#text(size: 0.85em, fill: {})[#strong[{}]]]",
+                    bg_color, text_color, label_text
                 ));
                 is_first = false;
             } else {
@@ -315,8 +332,8 @@ impl ErpReportTemplate {
                 };
 
                 cells.push(format!(
-                    "table.cell(align: {})[#text(weight: \"bold\", size: 0.75em, fill: rgb(59, 130, 246))[{}]]",
-                    align, formatted
+                    "table.cell(align: {}, fill: {})[#text(size: 0.85em, fill: {})[#strong[{}]]]",
+                    align, bg_color, text_color, formatted
                 ));
             }
         }
@@ -387,7 +404,7 @@ impl ErpReportTemplate {
                 .map(|row| self.generate_data_row(row, columns, false))
                 .collect();
 
-            // Subtotal row
+            // Subtotal row (level 0 = main category)
             let subtotal_row = if show_subtotals {
                 if let Some(ref subtotal) = group.subtotal {
                     format!(
@@ -396,7 +413,8 @@ impl ErpReportTemplate {
                             subtotal,
                             columns,
                             &group.label,
-                            Some(group.record_count)
+                            Some(group.record_count),
+                            0, // Level 0 = main category subtotal
                         )
                     )
                 } else {
@@ -434,7 +452,7 @@ impl ErpReportTemplate {
     ) -> String {
         // First: group name spanning all columns
         let group_row = format!(
-            "table.cell(colspan: {}, fill: white, inset: (x: 6pt, y: 6pt))[#text(weight: \"bold\", size: 0.8em)[{}]]",
+            "table.cell(colspan: {}, fill: white, inset: (x: 6pt, y: 6pt))[#text(size: 0.85em)[#strong[{}]]]",
             columns.len(),
             utils::escape_typst(group_label)
         );
@@ -449,7 +467,7 @@ impl ErpReportTemplate {
                     ColumnAlign::Right => "right",
                 };
                 format!(
-                    "table.cell(align: {}, fill: rgb(71, 85, 105))[#text(weight: \"bold\", size: 0.75em, fill: white)[{}]]",
+                    "table.cell(align: {}, fill: rgb(51, 65, 85))[#text(size: 0.85em, fill: white)[#strong[{}]]]",
                     align,
                     utils::escape_typst(&col.label).to_uppercase()
                 )
@@ -486,9 +504,9 @@ impl ErpReportTemplate {
             // Process subgroups if they exist
             if let Some(ref sub_groups) = group.sub_groups {
                 for sub_group in sub_groups {
-                    // Level 1 group header - indented
+                    // Level 1 group header - indented with light gray background
                     all_rows.push(format!(
-                        "table.cell(colspan: {}, fill: white, inset: (x: 12pt, y: 6pt))[#text(weight: \"semibold\", size: 0.75em)[{}]]",
+                        "table.cell(colspan: {}, fill: rgb(232, 232, 232), inset: (x: 12pt, y: 6pt))[#text(size: 0.8em)[#strong[{}]]]",
                         columns.len(),
                         utils::escape_typst(&sub_group.label)
                     ));
@@ -498,7 +516,7 @@ impl ErpReportTemplate {
                         all_rows.push(self.generate_data_row(row, columns, false));
                     }
 
-                    // Subgroup subtotal
+                    // Subgroup subtotal (level 1 = subcategory)
                     if show_subtotals {
                         if let Some(ref subtotal) = sub_group.subtotal {
                             all_rows.push(self.generate_subtotal_row_inline(
@@ -506,6 +524,7 @@ impl ErpReportTemplate {
                                 columns,
                                 &sub_group.label,
                                 Some(sub_group.record_count),
+                                1, // Level 1 = subcategory subtotal
                             ));
                         }
                     }
@@ -517,7 +536,7 @@ impl ErpReportTemplate {
                 }
             }
 
-            // Group subtotal
+            // Group subtotal (level 0 = main category)
             if show_subtotals {
                 if let Some(ref subtotal) = group.subtotal {
                     all_rows.push(self.generate_subtotal_row_inline(
@@ -525,6 +544,7 @@ impl ErpReportTemplate {
                         columns,
                         &group.label,
                         Some(group.record_count),
+                        0, // Level 0 = main category subtotal
                     ));
                 }
             }
@@ -603,7 +623,7 @@ impl ErpReportTemplate {
 
             if let Some(balance) = summary.final_balance {
                 content.push_str(&format!(
-                    "\n    [#text(weight: \"bold\")[Saldo Final]:], [#text(weight: \"bold\")[{}]],",
+                    "\n    [#strong[Saldo Final]:], [#strong[{}]],",
                     self.format_currency(balance)
                 ));
             }
@@ -653,7 +673,7 @@ impl ErpReportTemplate {
             .iter()
             .map(|(lbl, _)| {
                 format!(
-                    "table.cell(fill: rgb(71, 85, 105), align: center)[#text(weight: \"bold\", size: 0.75em, fill: white)[{}]]",
+                    "table.cell(fill: rgb(31, 78, 121), align: center)[#text(size: 0.85em, fill: white)[#strong[{}]]]",
                     lbl.to_uppercase()
                 )
             })
@@ -664,7 +684,7 @@ impl ErpReportTemplate {
             .iter()
             .map(|(_, val)| {
                 format!(
-                    "table.cell(align: center)[#text(weight: \"bold\", size: 0.85em, fill: rgb(59, 130, 246))[{}]]",
+                    "table.cell(fill: rgb(217, 234, 250), align: center)[#text(size: 0.9em, fill: rgb(31, 78, 121))[#strong[{}]]]",
                     val
                 )
             })

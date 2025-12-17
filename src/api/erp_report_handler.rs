@@ -6,6 +6,7 @@ use actix_web::{web, HttpRequest, HttpResponse};
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::Instant;
+use tracing::Instrument;
 use uuid::Uuid;
 
 use super::error::ApiResult;
@@ -53,28 +54,42 @@ pub async fn generate_erp_report_sync(
     // The caller (Core-Service) decides whether to use sync or async endpoint
     // based on the number of records (threshold: 1000)
 
-    // Generate report ID
+    // Generate report ID and get correlation_id for distributed tracing
     let report_id = Uuid::new_v4().to_string();
+    let correlation_id = payload
+        .correlation_id
+        .clone()
+        .unwrap_or_else(|| report_id.clone());
 
-    tracing::info!(
-        "Generating ERP report sync: code={}, variant={:?}, format={:?}, records={}",
-        payload.report.code,
-        payload.report.variant,
-        payload.output.format,
-        payload.data.total_records
+    // Create a span for the entire request - all logs will include correlation_id
+    let request_span = tracing::info_span!(
+        "erp_report_sync",
+        correlation_id = %correlation_id,
+        report_id = %report_id,
+        tenant_id = %payload.tenant_id,
+        report_code = %payload.report.code
     );
 
-    // Debug: Log output options to verify deserialization
-    tracing::info!(
-        "Output options: page_size={:?}, orientation={:?}, scale={}, margins={:?}, include_header={}, include_footer={}, show_logo={}",
-        payload.output.page_size,
-        payload.output.orientation,
-        payload.output.scale,
-        payload.output.margins,
-        payload.output.include_header,
-        payload.output.include_footer,
-        payload.output.show_logo
-    );
+    // Process within the span so all logs have correlation_id
+    async move {
+        tracing::info!(
+            "Generating ERP report sync: variant={:?}, format={:?}, records={}",
+            payload.report.variant,
+            payload.output.format,
+            payload.data.total_records
+        );
+
+        // Debug: Log output options to verify deserialization
+        tracing::debug!(
+            "Output options: page_size={:?}, orientation={:?}, scale={}, margins={:?}, include_header={}, include_footer={}, show_logo={}",
+            payload.output.page_size,
+            payload.output.orientation,
+            payload.output.scale,
+            payload.output.margins,
+            payload.output.include_header,
+            payload.output.include_footer,
+            payload.output.show_logo
+        );
 
     // Generate based on output format
     let result = match payload.output.format {
@@ -185,6 +200,9 @@ pub async fn generate_erp_report_sync(
             })))
         }
     }
+    }
+    .instrument(request_span)
+    .await
 }
 
 /// Generate ERP report and stream bytes directly
@@ -217,79 +235,96 @@ pub async fn generate_erp_report_stream(
         })));
     }
 
+    // Generate report ID and get correlation_id for distributed tracing
     let report_id = Uuid::new_v4().to_string();
+    let correlation_id = payload
+        .correlation_id
+        .clone()
+        .unwrap_or_else(|| report_id.clone());
 
-    tracing::info!(
-        "Generating ERP report stream: code={}, variant={:?}, format={:?}, records={}",
-        payload.report.code,
-        payload.report.variant,
-        payload.output.format,
-        payload.data.total_records
+    // Create a span for the entire request - all logs will include correlation_id
+    let request_span = tracing::info_span!(
+        "erp_report_stream",
+        correlation_id = %correlation_id,
+        report_id = %report_id,
+        tenant_id = %payload.tenant_id,
+        report_code = %payload.report.code
     );
 
-    // Debug: Log output options to verify deserialization
-    tracing::info!(
-        "Stream output options: page_size={:?}, orientation={:?}, scale={}, margins={:?}",
-        payload.output.page_size,
-        payload.output.orientation,
-        payload.output.scale,
-        payload.output.margins
-    );
+    async move {
+        tracing::info!(
+            "Generating ERP report stream: variant={:?}, format={:?}, records={}",
+            payload.report.variant,
+            payload.output.format,
+            payload.data.total_records
+        );
 
-    // Generate based on output format
-    let result = match payload.output.format {
-        OutputFormat::Pdf => generate_pdf(&payload).await,
-        OutputFormat::Xlsx => generate_excel(&payload).await,
-        OutputFormat::Csv => generate_csv(&payload).await,
-        OutputFormat::Html => {
-            return Ok(HttpResponse::BadRequest().json(json!({
-                "error": "HTML format not yet implemented for reports"
-            })));
-        }
-    };
+        // Debug: Log output options to verify deserialization
+        tracing::debug!(
+            "Stream output options: page_size={:?}, orientation={:?}, scale={}, margins={:?}",
+            payload.output.page_size,
+            payload.output.orientation,
+            payload.output.scale,
+            payload.output.margins
+        );
 
-    match result {
-        Ok((bytes, mime_type, extension)) => {
-            let processing_time_ms = start.elapsed().as_millis() as u64;
+        // Generate based on output format
+        let result = match payload.output.format {
+            OutputFormat::Pdf => generate_pdf(&payload).await,
+            OutputFormat::Xlsx => generate_excel(&payload).await,
+            OutputFormat::Csv => generate_csv(&payload).await,
+            OutputFormat::Html => {
+                return Ok(HttpResponse::BadRequest().json(json!({
+                    "error": "HTML format not yet implemented for reports"
+                })));
+            }
+        };
 
-            // Generate filename
-            let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
-            let filename = format!(
-                "{}_{}.{}",
-                payload.report.code.to_lowercase().replace('_', "-"),
-                timestamp,
-                extension
-            );
+        match result {
+            Ok((bytes, mime_type, extension)) => {
+                let processing_time_ms = start.elapsed().as_millis() as u64;
 
-            tracing::info!(
-                "ERP report stream generated: id={}, format={:?}, size={} bytes, time={}ms",
-                report_id,
-                payload.output.format,
-                bytes.len(),
-                processing_time_ms
-            );
+                // Generate filename
+                let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+                let filename = format!(
+                    "{}_{}.{}",
+                    payload.report.code.to_lowercase().replace('_', "-"),
+                    timestamp,
+                    extension
+                );
 
-            // Return binary stream directly
-            Ok(HttpResponse::Ok()
-                .content_type(mime_type)
-                .append_header((
-                    "Content-Disposition",
-                    format!("attachment; filename=\"{}\"", filename),
-                ))
-                .append_header(("Content-Length", bytes.len().to_string()))
-                .append_header(("X-Report-Id", report_id))
-                .append_header(("X-Processing-Time-Ms", processing_time_ms.to_string()))
-                .body(bytes))
-        }
-        Err(e) => {
-            tracing::error!("Failed to generate ERP report stream: {:?}", e);
-            Ok(HttpResponse::InternalServerError().json(json!({
-                "success": false,
-                "error": "Failed to generate report",
-                "details": e.to_string()
-            })))
+                tracing::info!(
+                    "ERP report stream generated: id={}, format={:?}, size={} bytes, time={}ms",
+                    report_id,
+                    payload.output.format,
+                    bytes.len(),
+                    processing_time_ms
+                );
+
+                // Return binary stream directly
+                Ok(HttpResponse::Ok()
+                    .content_type(mime_type)
+                    .append_header((
+                        "Content-Disposition",
+                        format!("attachment; filename=\"{}\"", filename),
+                    ))
+                    .append_header(("Content-Length", bytes.len().to_string()))
+                    .append_header(("X-Report-Id", report_id))
+                    .append_header(("X-Processing-Time-Ms", processing_time_ms.to_string()))
+                    .body(bytes))
+            }
+            Err(e) => {
+                tracing::error!("Failed to generate ERP report stream: {:?}", e);
+                Ok(HttpResponse::InternalServerError().json(json!({
+                    "success": false,
+                    "error": "Failed to generate report",
+                    "details": e.to_string()
+                })))
+            }
         }
     }
+    .instrument(request_span)
+    .await
 }
 
 /// Queue ERP report for async generation
@@ -322,26 +357,43 @@ pub async fn generate_erp_report_async(
     let report_id = Uuid::new_v4().to_string();
     let estimated_time = payload.estimate_processing_time_secs();
 
+    // Use correlation_id from payload or generate one
+    let correlation_id = payload
+        .correlation_id
+        .clone()
+        .unwrap_or_else(|| report_id.clone());
+
     tracing::info!(
-        "Queueing ERP report async: id={}, code={}, records={}, estimated_time={}s",
-        report_id,
-        payload.report.code,
-        payload.data.total_records,
-        estimated_time
+        correlation_id = %correlation_id,
+        report_id = %report_id,
+        report_code = %payload.report.code,
+        records = payload.data.total_records,
+        estimated_time_secs = estimated_time,
+        "Queueing ERP report for async processing"
     );
 
     // Clone for async task
     let state_clone = state.clone();
     let report_id_clone = report_id.clone();
+    let correlation_id_clone = correlation_id.clone();
 
     // Spawn background task
     tokio::spawn(async move {
         match process_report_async(state_clone, payload, report_id_clone.clone()).await {
             Ok(url) => {
-                tracing::info!("Async report {} completed: {}", report_id_clone, url);
+                tracing::info!(
+                    correlation_id = %correlation_id_clone,
+                    report_id = %report_id_clone,
+                    result_url = %url,
+                    "Async report completed"
+                );
             }
             Err(e) => {
-                tracing::error!("Async report {} failed: {}", report_id_clone, e);
+                tracing::error!(
+                    correlation_id = %correlation_id_clone,
+                    report_id = %report_id_clone,
+                    "Async report failed: {}", e
+                );
             }
         }
     });
@@ -465,80 +517,146 @@ async fn process_report_async(
 ) -> anyhow::Result<String> {
     let start = Instant::now();
 
+    // Use correlation_id from payload or fallback to report_id
+    let correlation_id = payload
+        .correlation_id
+        .clone()
+        .unwrap_or_else(|| report_id.clone());
+
     // Generate based on format
+    tracing::info!(
+        correlation_id = %correlation_id,
+        report_code = %payload.report.code,
+        format = ?payload.output.format,
+        "Step 1: Generating report"
+    );
+
     let (bytes, mime_type, extension) = match payload.output.format {
-        OutputFormat::Pdf => generate_pdf(&payload).await?,
-        OutputFormat::Xlsx => generate_excel(&payload).await?,
-        OutputFormat::Csv => generate_csv(&payload).await?,
+        OutputFormat::Pdf => generate_pdf(&payload).await.map_err(|e| {
+            tracing::error!(correlation_id = %correlation_id, "PDF generation failed: {:?}", e);
+            e
+        })?,
+        OutputFormat::Xlsx => generate_excel(&payload).await.map_err(|e| {
+            tracing::error!(correlation_id = %correlation_id, "Excel generation failed: {:?}", e);
+            e
+        })?,
+        OutputFormat::Csv => generate_csv(&payload).await.map_err(|e| {
+            tracing::error!(correlation_id = %correlation_id, "CSV generation failed: {:?}", e);
+            e
+        })?,
         OutputFormat::Html => {
             return Err(anyhow::anyhow!("HTML format not implemented"));
         }
     };
 
-    // Upload to S3
-    let file_key = format!(
-        "reports/{}/{}/{}.{}",
-        payload.tenant_id,
-        chrono::Utc::now().format("%Y/%m/%d"),
-        report_id,
-        extension
-    );
-
-    state
-        .s3_client
-        .put_object(
-            &state.config.s3_bucket_documents,
-            &file_key,
-            bytes.clone(),
-            mime_type,
-        )
-        .await?;
-
-    // Generate presigned URL
-    let url = state
-        .s3_client
-        .create_presigned_url(
-            &state.config.s3_bucket_documents,
-            &file_key,
-            86400, // 24 hours
-        )
-        .await?;
-
-    let processing_time = start.elapsed().as_millis();
     let file_size = bytes.len();
     tracing::info!(
-        "Async report {} completed: size={} bytes, time={}ms",
-        report_id,
-        file_size,
-        processing_time
+        correlation_id = %correlation_id,
+        size_bytes = file_size,
+        "Step 1 complete: Generated report"
+    );
+
+    // Determine if file is too large to attach directly to email
+    let needs_s3_upload = file_size > MAX_ATTACHMENT_SIZE_BYTES;
+
+    // Only upload to S3 if file is too large to attach
+    let download_url = if needs_s3_upload {
+        tracing::info!(
+            correlation_id = %correlation_id,
+            file_size = file_size,
+            threshold = MAX_ATTACHMENT_SIZE_BYTES,
+            "File exceeds threshold, uploading to S3"
+        );
+
+        // Get environment prefix for S3 path
+        let env_prefix = std::env::var("KAFKA_ENV_PREFIX").unwrap_or_else(|_| "dev".to_string());
+
+        // Generate filename from report code: NCF_SUMMARY -> ncf-summary_2025-12-17_19-30-45.pdf
+        let report_name = payload.report.code.to_lowercase().replace('_', "-");
+        let timestamp = chrono::Utc::now().format("%Y-%m-%d_%H-%M-%S");
+
+        // S3 key format: {env}/{tenant_id}/{report-name}_{datetime}.{extension}
+        let file_key = format!(
+            "{}/{}/{}_{}.{}",
+            env_prefix, payload.tenant_id, report_name, timestamp, extension
+        );
+
+        tracing::info!(
+            correlation_id = %correlation_id,
+            bucket = %state.config.s3_bucket_documents,
+            key = %file_key,
+            "Step 2: Uploading to S3"
+        );
+
+        if let Err(e) = state
+            .s3_client
+            .put_object(
+                &state.config.s3_bucket_documents,
+                &file_key,
+                bytes.clone(),
+                mime_type,
+            )
+            .await
+        {
+            tracing::error!(correlation_id = %correlation_id, "S3 upload failed: {:?}", e);
+            return Err(e);
+        }
+        tracing::info!(correlation_id = %correlation_id, "Step 2 complete: S3 upload successful");
+
+        // Generate presigned URL
+        tracing::info!(correlation_id = %correlation_id, "Step 3: Generating presigned URL");
+        let url = match state
+            .s3_client
+            .create_presigned_url(
+                &state.config.s3_bucket_documents,
+                &file_key,
+                86400, // 24 hours
+            )
+            .await
+        {
+            Ok(url) => {
+                tracing::info!(correlation_id = %correlation_id, "Step 3 complete: Presigned URL generated");
+                url
+            }
+            Err(e) => {
+                tracing::error!(correlation_id = %correlation_id, "Presigned URL generation failed: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        Some(url)
+    } else {
+        tracing::info!(
+            correlation_id = %correlation_id,
+            file_size = file_size,
+            threshold = MAX_ATTACHMENT_SIZE_BYTES,
+            "File within threshold, will attach directly to email (no S3 upload)"
+        );
+        None
+    };
+
+    let processing_time = start.elapsed().as_millis();
+    tracing::info!(
+        correlation_id = %correlation_id,
+        report_code = %payload.report.code,
+        size_bytes = file_size,
+        processing_time_ms = processing_time,
+        uploaded_to_s3 = needs_s3_upload,
+        "Report processing completed"
     );
 
     // Handle delivery if configured
     if payload.delivery.is_some() {
-        // Determine if we should attach the file or send a download link
-        // based on file size (10 MB threshold)
-        let download_url = if file_size > MAX_ATTACHMENT_SIZE_BYTES {
-            tracing::info!(
-                "File size {} bytes exceeds {} bytes threshold, sending download link instead of attachment",
-                file_size,
-                MAX_ATTACHMENT_SIZE_BYTES
-            );
-            Some(url.clone())
-        } else {
-            tracing::info!(
-                "File size {} bytes is within {} bytes threshold, attaching to email",
-                file_size,
-                MAX_ATTACHMENT_SIZE_BYTES
-            );
-            None
-        };
-
         if let Err(e) = deliver_report(&payload, &bytes, extension, download_url.as_deref()).await {
-            tracing::warn!("Delivery failed for report {}: {}", report_id, e);
+            tracing::warn!(
+                correlation_id = %correlation_id,
+                "Delivery failed: {}", e
+            );
         }
     }
 
-    Ok(url)
+    // Return the download URL if uploaded, otherwise return a placeholder
+    Ok(download_url.unwrap_or_else(|| format!("delivered-directly:{}", report_id)))
 }
 
 /// Deliver report via configured channels

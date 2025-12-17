@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::signal;
 use tokio::sync::broadcast;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, Instrument};
 
 use pdf_services::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use pdf_services::infrastructure::cache::CacheService;
@@ -248,70 +248,84 @@ async fn main() -> Result<()> {
                             }
                         };
 
-                        // Process message
-                        {
-                            let kafka_msg = kafka_msg;
-                                let handler_clone = handler.clone();
-                                let producer_clone = producer.clone();
-                                let response_topic_clone = response_topic.clone();
-                                let correlation_id_clone = correlation_id.clone();
+                        // Process message within a span that includes correlation_id
+                        // This ensures ALL logs within processing have the correlation_id
+                        let handler_clone = handler.clone();
+                        let producer_clone = producer.clone();
+                        let response_topic_clone = response_topic.clone();
+                        let correlation_id_for_span = correlation_id.clone().unwrap_or_else(|| "none".to_string());
+                        let correlation_id_clone = correlation_id.clone();
 
-                                // Process message
-                                match handler_clone.handle(kafka_msg).await {
-                                    Ok(response) => {
-                                        info!("Message processed successfully");
+                        // Create a span with the correlation_id - all nested logs will include it
+                        let processing_span = tracing::info_span!(
+                            "process_message",
+                            correlation_id = %correlation_id_for_span,
+                            topic = %msg.topic(),
+                            partition = %msg.partition(),
+                            offset = %msg.offset()
+                        );
 
-                                        // Send response to response topic
-                                        if let Ok(response_json) = serde_json::to_string(&response) {
-                                            // Add correlation ID header if present and send
-                                            if let Some(ref cid) = correlation_id_clone {
-                                                let headers = rdkafka::message::OwnedHeaders::new()
-                                                    .insert(rdkafka::message::Header {
-                                                        key: "correlation_id",
-                                                        value: Some(cid.as_str()),
-                                                    });
+                        // Process message within the span
+                        async {
+                            info!("Starting message processing");
 
-                                                let record_with_headers = FutureRecord::to(&response_topic_clone)
-                                                    .payload(&response_json)
-                                                    .key(cid.as_str())
-                                                    .headers(headers);
+                            match handler_clone.handle(kafka_msg).await {
+                                Ok(response) => {
+                                    info!("Message processed successfully");
 
-                                                match producer_clone.send(record_with_headers, Duration::from_secs(5)).await {
-                                                    Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
-                                                    Err((e, _)) => error!("Failed to send response: {}", e),
-                                                }
-                                            } else {
-                                                let record = FutureRecord::<str, str>::to(&response_topic_clone)
-                                                    .payload(&response_json);
+                                    // Send response to response topic
+                                    if let Ok(response_json) = serde_json::to_string(&response) {
+                                        // Add correlation ID header if present and send
+                                        if let Some(ref cid) = correlation_id_clone {
+                                            let headers = rdkafka::message::OwnedHeaders::new()
+                                                .insert(rdkafka::message::Header {
+                                                    key: "correlation_id",
+                                                    value: Some(cid.as_str()),
+                                                });
 
-                                                match producer_clone.send(record, Duration::from_secs(5)).await {
-                                                    Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
-                                                    Err((e, _)) => error!("Failed to send response: {}", e),
-                                                }
+                                            let record_with_headers = FutureRecord::to(&response_topic_clone)
+                                                .payload(&response_json)
+                                                .key(cid.as_str())
+                                                .headers(headers);
+
+                                            match producer_clone.send(record_with_headers, Duration::from_secs(5)).await {
+                                                Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
+                                                Err((e, _)) => error!("Failed to send response: {}", e),
+                                            }
+                                        } else {
+                                            let record = FutureRecord::<str, str>::to(&response_topic_clone)
+                                                .payload(&response_json);
+
+                                            match producer_clone.send(record, Duration::from_secs(5)).await {
+                                                Ok(_) => info!("Response sent to topic: {}", response_topic_clone),
+                                                Err((e, _)) => error!("Failed to send response: {}", e),
                                             }
                                         }
                                     }
-                                    Err(e) => {
-                                        error!("Error processing message: {}", e);
+                                }
+                                Err(e) => {
+                                    error!("Error processing message: {}", e);
 
-                                        // Send error response
-                                        let error_response = serde_json::json!({
-                                            "type": "error",
-                                            "error": e.to_string(),
-                                            "correlation_id": correlation_id
-                                        });
+                                    // Send error response
+                                    let error_response = serde_json::json!({
+                                        "type": "error",
+                                        "error": e.to_string(),
+                                        "correlation_id": correlation_id_clone
+                                    });
 
-                                        if let Ok(error_json) = serde_json::to_string(&error_response) {
-                                            let key = correlation_id.clone().unwrap_or_default();
-                                            let record = FutureRecord::to(&response_topic_clone)
-                                                .payload(&error_json)
-                                                .key(&key);
+                                    if let Ok(error_json) = serde_json::to_string(&error_response) {
+                                        let key = correlation_id_clone.clone().unwrap_or_default();
+                                        let record = FutureRecord::to(&response_topic_clone)
+                                            .payload(&error_json)
+                                            .key(&key);
 
-                                            let _ = producer_clone.send(record, Duration::from_secs(5)).await;
-                                        }
+                                        let _ = producer_clone.send(record, Duration::from_secs(5)).await;
                                     }
                                 }
+                            }
                         }
+                        .instrument(processing_span)
+                        .await;
 
                         // Commit offset
                         if let Err(e) = consumer.commit_message(&msg, CommitMode::Async) {
