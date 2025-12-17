@@ -210,7 +210,12 @@ impl ErpReportTemplate {
                 };
 
                 // Color based on highlight - neutral blue-gray tones
-                let (weight, color) = if col.highlight.as_ref().map(|h| h == "primary").unwrap_or(false) {
+                let (weight, color) = if col
+                    .highlight
+                    .as_ref()
+                    .map(|h| h == "primary")
+                    .unwrap_or(false)
+                {
                     ("\"bold\"", "rgb(59, 130, 246)")
                 } else if is_subtotal {
                     ("\"bold\"", "rgb(71, 85, 105)")
@@ -387,7 +392,12 @@ impl ErpReportTemplate {
                 if let Some(ref subtotal) = group.subtotal {
                     format!(
                         ",\n  {}",
-                        self.generate_subtotal_row_inline(subtotal, columns, &group.label, Some(group.record_count))
+                        self.generate_subtotal_row_inline(
+                            subtotal,
+                            columns,
+                            &group.label,
+                            Some(group.record_count)
+                        )
                     )
                 } else {
                     String::new()
@@ -417,7 +427,11 @@ impl ErpReportTemplate {
     }
 
     /// Generate header row with group name on top
-    fn generate_header_row_with_group(&self, columns: &[&ColumnDefinition], group_label: &str) -> String {
+    fn generate_header_row_with_group(
+        &self,
+        columns: &[&ColumnDefinition],
+        group_label: &str,
+    ) -> String {
         // First: group name spanning all columns
         let group_row = format!(
             "table.cell(colspan: {}, fill: white, inset: (x: 6pt, y: 6pt))[#text(weight: \"bold\", size: 0.8em)[{}]]",
@@ -612,15 +626,15 @@ impl ErpReportTemplate {
         let all_totals: Vec<(String, String)> = all_columns
             .iter()
             .filter_map(|col| {
-                grand_total.get(&col.key).and_then(|value| {
-                    match col.column_type {
+                grand_total
+                    .get(&col.key)
+                    .and_then(|value| match col.column_type {
                         ColumnType::Currency | ColumnType::Decimal | ColumnType::Integer => {
                             let formatted = self.format_value(value, col);
                             Some((col.label.clone(), formatted))
                         }
                         _ => None,
-                    }
-                })
+                    })
             })
             .collect();
 
@@ -669,10 +683,7 @@ impl ErpReportTemplate {
   {},
   {}
 )"#,
-            total_records,
-            widths,
-            headers,
-            values
+            total_records, widths, headers, values
         )
     }
 

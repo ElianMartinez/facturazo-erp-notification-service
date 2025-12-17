@@ -118,6 +118,9 @@ enum Commands {
         /// Output format (pdf, xlsx, csv)
         #[arg(short, long, default_value = "pdf")]
         format: String,
+        /// Load payload from JSON file (optional)
+        #[arg(short, long)]
+        json: Option<String>,
     },
     /// Test HTTP API
     Http {
@@ -228,7 +231,8 @@ async fn main() -> Result<()> {
             orientation,
             records,
             format,
-        } => test_erp_report(&variant, &orientation, records, &format).await?,
+            json,
+        } => test_erp_report(&variant, &orientation, records, &format, json).await?,
         Commands::Http { url } => test_http(&url).await?,
         Commands::Whatsapp { action } => handle_whatsapp(action).await?,
         Commands::SendReportEmail {
@@ -542,6 +546,7 @@ async fn test_erp_report(
     orientation: &str,
     records: i32,
     format: &str,
+    json_path: Option<String>,
 ) -> Result<()> {
     use pdf_services::infrastructure::generators::typst_generator::TypstGenerator;
     use pdf_services::infrastructure::generators::ErpReportCsvGenerator;
@@ -549,20 +554,33 @@ async fn test_erp_report(
     use pdf_services::templates::templates::ErpReportTemplate;
 
     println!("\n📊 Testing ERP Report Generation\n{}", "=".repeat(50));
-    println!("   Variant: {}", variant);
-    println!("   Format: {}", format.to_uppercase());
-    println!("   Orientation: {}", orientation);
-    println!("   Records: {}", records);
 
     let work_dir = PathBuf::from("./temp");
     std::fs::create_dir_all(&work_dir)?;
 
-    // Build sample payload based on variant
-    let payload = match variant {
-        "ncf_summary" => build_ncf_summary_payload(records, orientation),
-        "ar_balance" => build_ar_balance_payload(records, orientation),
-        _ => build_generic_payload(variant, records, orientation),
+    // Build payload - from JSON file or generate sample
+    let (payload, output_name) = if let Some(ref path) = json_path {
+        println!("   Loading from JSON: {}", path);
+        let json_content = std::fs::read_to_string(path)?;
+        let payload: ErpReportPayload = serde_json::from_str(&json_content)?;
+        let name = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("custom");
+        (payload, name.to_string())
+    } else {
+        println!("   Variant: {}", variant);
+        println!("   Orientation: {}", orientation);
+        println!("   Records: {}", records);
+        let payload = match variant {
+            "ncf_summary" => build_ncf_summary_payload(records, orientation),
+            "ar_balance" => build_ar_balance_payload(records, orientation),
+            _ => build_generic_payload(variant, records, orientation),
+        };
+        (payload, format!("erp_{}", variant))
     };
+
+    println!("   Format: {}", format.to_uppercase());
 
     // Check processing mode
     let mode = payload.get_processing_mode();
@@ -583,7 +601,7 @@ async fn test_erp_report(
             let typst_content = template.generate(&json_value)?;
 
             // Save Typst content for debugging
-            let typst_path = format!("test_erp_{}.typ", variant);
+            let typst_path = format!("{}.typ", output_name);
             std::fs::write(&typst_path, &typst_content)?;
             println!("   Typst saved: {}", typst_path);
 
@@ -593,7 +611,7 @@ async fn test_erp_report(
 
             match generator.generate_pdf(&typst_content).await {
                 Ok(bytes) => {
-                    let output_path = format!("test_erp_{}.pdf", variant);
+                    let output_path = format!("{}.pdf", output_name);
                     std::fs::write(&output_path, &bytes)?;
                     println!("\n✅ PDF generated successfully!");
                     println!("   Output: {}", output_path);
@@ -616,7 +634,7 @@ async fn test_erp_report(
 
             match generator.generate(&payload).await {
                 Ok(bytes) => {
-                    let output_path = format!("test_erp_{}.xlsx", variant);
+                    let output_path = format!("{}.xlsx", output_name);
                     std::fs::write(&output_path, &bytes)?;
                     println!("\n✅ Excel generated successfully!");
                     println!("   Output: {}", output_path);
@@ -638,7 +656,7 @@ async fn test_erp_report(
 
             match generator.generate(&payload).await {
                 Ok(bytes) => {
-                    let output_path = format!("test_erp_{}.csv", variant);
+                    let output_path = format!("{}.csv", output_name);
                     std::fs::write(&output_path, &bytes)?;
                     println!("\n✅ CSV generated successfully!");
                     println!("   Output: {}", output_path);

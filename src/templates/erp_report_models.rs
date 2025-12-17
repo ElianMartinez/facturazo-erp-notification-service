@@ -403,12 +403,76 @@ pub struct ReportDataSet {
 }
 
 /// Data structure types
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// Supports both string ("Flat", "Grouped", etc.) and number (0, 1, 2, 3) deserialization
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub enum DataStructureType {
     Flat,
     Grouped,
     HierarchicalGrouped,
     Statement,
+}
+
+// Custom deserializer to handle both string and integer formats from C#
+impl<'de> serde::Deserialize<'de> for DataStructureType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::{self, Visitor};
+
+        struct DataStructureTypeVisitor;
+
+        impl<'de> Visitor<'de> for DataStructureTypeVisitor {
+            type Value = DataStructureType;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string or integer representing DataStructureType")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<DataStructureType, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    "Flat" | "flat" => Ok(DataStructureType::Flat),
+                    "Grouped" | "grouped" => Ok(DataStructureType::Grouped),
+                    "HierarchicalGrouped" | "hierarchicalGrouped" | "hierarchical_grouped" => {
+                        Ok(DataStructureType::HierarchicalGrouped)
+                    }
+                    "Statement" | "statement" => Ok(DataStructureType::Statement),
+                    _ => Err(de::Error::unknown_variant(
+                        value,
+                        &["Flat", "Grouped", "HierarchicalGrouped", "Statement"],
+                    )),
+                }
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<DataStructureType, E>
+            where
+                E: de::Error,
+            {
+                match value {
+                    0 => Ok(DataStructureType::Flat),
+                    1 => Ok(DataStructureType::Grouped),
+                    2 => Ok(DataStructureType::HierarchicalGrouped),
+                    3 => Ok(DataStructureType::Statement),
+                    _ => Err(de::Error::invalid_value(
+                        de::Unexpected::Unsigned(value),
+                        &"0, 1, 2, or 3",
+                    )),
+                }
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<DataStructureType, E>
+            where
+                E: de::Error,
+            {
+                self.visit_u64(value as u64)
+            }
+        }
+
+        deserializer.deserialize_any(DataStructureTypeVisitor)
+    }
 }
 
 impl Default for DataStructureType {
