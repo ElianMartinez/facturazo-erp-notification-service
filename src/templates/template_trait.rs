@@ -94,9 +94,15 @@ pub mod utils {
 
     /// Escapa caracteres especiales para Typst
     pub fn escape_typst(text: &str) -> String {
-        text.replace('@', "\\@")
+        text.replace('\\', "\\\\")
+            .replace('@', "\\@")
             .replace('#', "\\#")
             .replace('$', "\\$")
+            .replace('`', "'")
+            .replace('[', "\\[")
+            .replace(']', "\\]")
+            .replace('<', "\\<")
+            .replace('>', "\\>")
     }
 
     /// Formatea un número con separadores de miles

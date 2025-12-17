@@ -1652,7 +1652,7 @@ async fn send_report_via_email(
         )
         .build();
 
-    match notifier.deliver_report(&payload, doc_bytes).await {
+    match notifier.deliver_report(&payload, doc_bytes, None).await {
         Ok(result) => {
             println!("\n✅ Email sent successfully!");
             println!("   Recipients: {:?}", result.successful_recipients);
@@ -1744,7 +1744,7 @@ async fn send_report_via_whatsapp(
         .with_whatsapp(api_url, api_key, instance)
         .build();
 
-    match notifier.deliver_report(&payload, doc_bytes).await {
+    match notifier.deliver_report(&payload, doc_bytes, None).await {
         Ok(result) => {
             println!("\n✅ WhatsApp sent successfully!");
             println!("   Recipients: {:?}", result.successful_recipients);

@@ -78,10 +78,17 @@ impl ErpReportNotifier {
     }
 
     /// Deliver a report based on the payload's delivery options
+    ///
+    /// # Arguments
+    /// * `payload` - The report payload with delivery configuration
+    /// * `document_bytes` - The generated report file bytes
+    /// * `download_url` - Optional download URL. If provided, sends link instead of attachment
+    ///                    (used when file size exceeds attachment limit, typically 10 MB)
     pub async fn deliver_report(
         &self,
         payload: &ErpReportPayload,
         document_bytes: Vec<u8>,
+        download_url: Option<String>,
     ) -> Result<DeliveryResult> {
         let delivery = payload
             .delivery
@@ -90,11 +97,11 @@ impl ErpReportNotifier {
 
         match delivery.method {
             DeliveryMethod::Email => {
-                self.deliver_via_email(payload, &delivery.email, document_bytes)
+                self.deliver_via_email(payload, &delivery.email, document_bytes, download_url)
                     .await
             }
             DeliveryMethod::WhatsApp => {
-                self.deliver_via_whatsapp(payload, &delivery.whatsapp, document_bytes)
+                self.deliver_via_whatsapp(payload, &delivery.whatsapp, document_bytes, download_url)
                     .await
             }
             DeliveryMethod::Download | DeliveryMethod::View => {
@@ -105,11 +112,15 @@ impl ErpReportNotifier {
     }
 
     /// Deliver report via email
+    ///
+    /// If `download_url` is provided, sends a link instead of attaching the file
+    /// (used for large files that exceed email attachment limits)
     async fn deliver_via_email(
         &self,
         payload: &ErpReportPayload,
         email_opts: &Option<EmailDelivery>,
         document_bytes: Vec<u8>,
+        download_url: Option<String>,
     ) -> Result<DeliveryResult> {
         let email_service = self
             .email_service
@@ -126,7 +137,7 @@ impl ErpReportNotifier {
 
         let mut result = DeliveryResult::new(DeliveryMethod::Email);
 
-        // Build email content
+        // Build email content - different template based on attachment vs link
         let subject = email_delivery.subject.clone().unwrap_or_else(|| {
             format!(
                 "Reporte: {} - {}",
@@ -134,15 +145,26 @@ impl ErpReportNotifier {
             )
         });
 
-        let (plain_body, html_body) =
-            self.build_report_email_content(payload, &email_delivery.message);
-
-        // Build attachment
-        let (filename, content_type) = self.get_attachment_info(payload);
-        let attachment = EmailAttachment {
-            filename,
-            content_type,
-            data: document_bytes.clone(),
+        // Determine if we're sending attachment or download link
+        let (plain_body, html_body, attachments) = if let Some(ref url) = download_url {
+            // Large file - send download link instead of attachment
+            info!(
+                "Sending report with download link (file too large for attachment): {}",
+                url
+            );
+            let (plain, html) =
+                self.build_report_email_content_with_link(payload, &email_delivery.message, url);
+            (plain, html, vec![])
+        } else {
+            // Normal file - attach directly
+            let (plain, html) = self.build_report_email_content(payload, &email_delivery.message);
+            let (filename, content_type) = self.get_attachment_info(payload);
+            let attachment = EmailAttachment {
+                filename,
+                content_type,
+                data: document_bytes.clone(),
+            };
+            (plain, html, vec![attachment])
         };
 
         // Send to each recipient
@@ -155,7 +177,7 @@ impl ErpReportNotifier {
                     &subject,
                     &plain_body,
                     Some(&html_body),
-                    vec![attachment.clone()],
+                    attachments.clone(),
                 )
                 .await
             {
@@ -181,11 +203,15 @@ impl ErpReportNotifier {
     }
 
     /// Deliver report via WhatsApp
+    ///
+    /// If `download_url` is provided, sends a link instead of attaching the file
+    /// (used for large files)
     async fn deliver_via_whatsapp(
         &self,
         payload: &ErpReportPayload,
         whatsapp_opts: &Option<WhatsAppDelivery>,
         document_bytes: Vec<u8>,
+        download_url: Option<String>,
     ) -> Result<DeliveryResult> {
         let whatsapp_client = self
             .whatsapp_client
@@ -202,19 +228,15 @@ impl ErpReportNotifier {
 
         let mut result = DeliveryResult::new(DeliveryMethod::WhatsApp);
 
-        // Build message content
-        let text_message = self.build_whatsapp_text_message(payload, &whatsapp_delivery.message);
+        // Build message content - include download link if file is too large
+        let text_message = if let Some(ref url) = download_url {
+            self.build_whatsapp_text_message_with_link(payload, &whatsapp_delivery.message, url)
+        } else {
+            self.build_whatsapp_text_message(payload, &whatsapp_delivery.message)
+        };
 
         // Get file info
         let (filename, mimetype) = self.get_attachment_info(payload);
-        let base64_content = BASE64.encode(&document_bytes);
-
-        // Build caption
-        let caption = format!(
-            "{} - {}",
-            payload.report.title,
-            self.get_format_label(&payload.output.format)
-        );
 
         // Send to each number
         for number in &whatsapp_delivery.numbers {
@@ -225,7 +247,7 @@ impl ErpReportNotifier {
                 number: super::evolution_api::normalize_dominican_phone(number),
                 text: text_message.clone(),
                 delay: None,
-                link_preview: Some(false),
+                link_preview: Some(download_url.is_some()), // Enable link preview if sending URL
                 mentioned: None,
                 mentions_every_one: None,
                 quoted: None,
@@ -235,33 +257,50 @@ impl ErpReportNotifier {
                 Ok(text_id) => {
                     info!("WhatsApp text sent to {}: {}", number, text_id);
 
-                    // Now send the document
-                    let media_request = SendMediaRequest {
-                        number: super::evolution_api::normalize_dominican_phone(number),
-                        mediatype: MediaType::Document,
-                        mimetype: mimetype.clone(),
-                        caption: caption.clone(),
-                        media: base64_content.clone(),
-                        file_name: filename.clone(),
-                        delay: Some(1000), // Small delay after text
-                        link_preview: Some(false),
-                        mentions_every_one: Some(false),
-                    };
+                    // Only send document if we don't have a download URL (file is small enough)
+                    if download_url.is_none() {
+                        let base64_content = BASE64.encode(&document_bytes);
+                        let caption = format!(
+                            "{} - {}",
+                            payload.report.title,
+                            self.get_format_label(&payload.output.format)
+                        );
 
-                    match whatsapp_client.send_media(media_request).await {
-                        Ok(doc_id) => {
-                            info!("WhatsApp document sent to {}: {}", number, doc_id);
-                            result.successful_recipients.push(number.clone());
-                            result
-                                .message_ids
-                                .push(format!("text:{},doc:{}", text_id, doc_id));
+                        let media_request = SendMediaRequest {
+                            number: super::evolution_api::normalize_dominican_phone(number),
+                            mediatype: MediaType::Document,
+                            mimetype: mimetype.clone(),
+                            caption: caption.clone(),
+                            media: base64_content.clone(),
+                            file_name: filename.clone(),
+                            delay: Some(1000), // Small delay after text
+                            link_preview: Some(false),
+                            mentions_every_one: Some(false),
+                        };
+
+                        match whatsapp_client.send_media(media_request).await {
+                            Ok(doc_id) => {
+                                info!("WhatsApp document sent to {}: {}", number, doc_id);
+                                result.successful_recipients.push(number.clone());
+                                result
+                                    .message_ids
+                                    .push(format!("text:{},doc:{}", text_id, doc_id));
+                            }
+                            Err(e) => {
+                                warn!("Text sent but document failed for {}: {}", number, e);
+                                result
+                                    .failed_recipients
+                                    .push((number.clone(), format!("Document failed: {}", e)));
+                            }
                         }
-                        Err(e) => {
-                            warn!("Text sent but document failed for {}: {}", number, e);
-                            result
-                                .failed_recipients
-                                .push((number.clone(), format!("Document failed: {}", e)));
-                        }
+                    } else {
+                        // File was too large, we already sent the download link in the text message
+                        info!(
+                            "WhatsApp link sent to {}: {} (file too large for direct send)",
+                            number, text_id
+                        );
+                        result.successful_recipients.push(number.clone());
+                        result.message_ids.push(format!("text:{}", text_id));
                     }
                 }
                 Err(e) => {
@@ -503,6 +542,265 @@ Por favor no responda a este mensaje."#,
         (plain_body, html_body)
     }
 
+    /// Build plain text and HTML email content for report with download link
+    /// Used when file is too large to attach (> 10 MB)
+    fn build_report_email_content_with_link(
+        &self,
+        payload: &ErpReportPayload,
+        custom_message: &Option<String>,
+        download_url: &str,
+    ) -> (String, String) {
+        let report_title = &payload.report.title;
+        let report_code = &payload.report.code;
+        let format_label = self.get_format_label(&payload.output.format);
+        let generated_at = &payload.report.generated_at;
+
+        // Date range info
+        let date_info = if let Some(ref range) = payload.report.date_range {
+            format!("Período: {} al {}", range.from, range.to)
+        } else if let Some(ref date) = payload.report.as_of_date {
+            format!("Fecha de corte: {}", date)
+        } else {
+            "".to_string()
+        };
+
+        // Custom message or default
+        let intro = custom_message
+            .clone()
+            .unwrap_or_else(|| "Su reporte ha sido generado exitosamente.".to_string());
+
+        // Plain text version with download link
+        let plain_body = format!(
+            r#"REPORTE: {}
+
+{}
+
+Detalles del reporte:
+- Código: {}
+- Formato: {}
+- Registros: {}
+{}
+- Generado: {}
+
+DESCARGAR REPORTE:
+{}
+
+⚠️ Este enlace expira en 24 horas.
+
+---
+Este es un correo automático generado por Facturazo ERP.
+Por favor no responda a este mensaje."#,
+            report_title,
+            intro,
+            report_code,
+            format_label,
+            payload.data.total_records,
+            if !date_info.is_empty() {
+                format!("- {}\n", date_info)
+            } else {
+                "".to_string()
+            },
+            generated_at,
+            download_url
+        );
+
+        // HTML version with download button
+        let html_body = format!(
+            r#"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {{
+            font-family: 'Segoe UI', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+        .header {{
+            background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }}
+        .header h1 {{
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }}
+        .header .subtitle {{
+            margin-top: 5px;
+            opacity: 0.9;
+            font-size: 14px;
+        }}
+        .content {{
+            padding: 25px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-top: none;
+        }}
+        .intro {{
+            font-size: 16px;
+            margin-bottom: 20px;
+        }}
+        .details {{
+            background-color: #f7fafc;
+            padding: 20px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border-left: 4px solid #3182ce;
+        }}
+        .details-row {{
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e2e8f0;
+        }}
+        .details-row:last-child {{
+            border-bottom: none;
+        }}
+        .details-label {{
+            font-weight: 600;
+            color: #4a5568;
+        }}
+        .details-value {{
+            color: #2d3748;
+        }}
+        .badge {{
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }}
+        .badge-pdf {{ background: #fed7d7; color: #c53030; }}
+        .badge-xlsx {{ background: #c6f6d5; color: #276749; }}
+        .badge-csv {{ background: #bee3f8; color: #2b6cb0; }}
+        .download-section {{
+            background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+            border-radius: 8px;
+            padding: 25px;
+            text-align: center;
+            margin: 25px 0;
+        }}
+        .download-btn {{
+            display: inline-block;
+            background: white;
+            color: #276749;
+            padding: 15px 40px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }}
+        .download-btn:hover {{
+            transform: translateY(-2px);
+        }}
+        .download-note {{
+            color: white;
+            margin-top: 15px;
+            font-size: 13px;
+            opacity: 0.9;
+        }}
+        .warning-notice {{
+            background: #fffbeb;
+            border: 1px solid #f6e05e;
+            border-radius: 6px;
+            padding: 12px 15px;
+            margin: 15px 0;
+            font-size: 13px;
+            color: #744210;
+        }}
+        .footer {{
+            color: #718096;
+            font-size: 12px;
+            padding: 20px;
+            text-align: center;
+            background: #f7fafc;
+            border-radius: 0 0 8px 8px;
+            border: 1px solid #e2e8f0;
+            border-top: none;
+        }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{}</h1>
+        <div class="subtitle">{}</div>
+    </div>
+    <div class="content">
+        <p class="intro">{}</p>
+
+        <div class="details">
+            <div class="details-row">
+                <span class="details-label">Formato</span>
+                <span class="details-value"><span class="badge badge-{}">{}</span></span>
+            </div>
+            <div class="details-row">
+                <span class="details-label">Total de registros</span>
+                <span class="details-value">{}</span>
+            </div>
+            {}
+            <div class="details-row">
+                <span class="details-label">Generado</span>
+                <span class="details-value">{}</span>
+            </div>
+        </div>
+
+        <div class="download-section">
+            <a href="{}" class="download-btn">📥 Descargar Reporte</a>
+            <p class="download-note">El archivo es demasiado grande para adjuntarlo al correo.</p>
+        </div>
+
+        <div class="warning-notice">
+            ⚠️ <strong>Importante:</strong> Este enlace de descarga expira en 24 horas.
+        </div>
+    </div>
+    <div class="footer">
+        <p>Este es un correo automático generado por <strong>Facturazo ERP</strong>.</p>
+        <p>Por favor no responda a este mensaje.</p>
+    </div>
+</body>
+</html>"#,
+            report_title,
+            report_code,
+            intro,
+            format_label.to_lowercase(),
+            format_label,
+            payload.data.total_records,
+            if !date_info.is_empty() {
+                format!(
+                    r#"<div class="details-row">
+                <span class="details-label">{}</span>
+                <span class="details-value">{}</span>
+            </div>"#,
+                    if payload.report.date_range.is_some() {
+                        "Período"
+                    } else {
+                        "Fecha de corte"
+                    },
+                    if let Some(ref range) = payload.report.date_range {
+                        format!("{} al {}", range.from, range.to)
+                    } else {
+                        payload.report.as_of_date.clone().unwrap_or_default()
+                    }
+                )
+            } else {
+                "".to_string()
+            },
+            generated_at,
+            download_url
+        );
+
+        (plain_body, html_body)
+    }
+
     /// Build WhatsApp text message for report
     fn build_whatsapp_text_message(
         &self,
@@ -548,6 +846,60 @@ A continuación recibirá el documento."#,
                 "".to_string()
             },
             custom_msg
+        )
+    }
+
+    /// Build WhatsApp text message for report with download link
+    /// Used when file is too large to send directly (> 10 MB)
+    fn build_whatsapp_text_message_with_link(
+        &self,
+        payload: &ErpReportPayload,
+        custom_message: &Option<String>,
+        download_url: &str,
+    ) -> String {
+        let format_label = self.get_format_label(&payload.output.format);
+        let format_emoji = self.get_format_emoji(&payload.output.format);
+
+        // Date range info
+        let date_info = if let Some(ref range) = payload.report.date_range {
+            format!("📅 *Período:* {} al {}", range.from, range.to)
+        } else if let Some(ref date) = payload.report.as_of_date {
+            format!("📅 *Fecha de corte:* {}", date)
+        } else {
+            "".to_string()
+        };
+
+        let custom_msg = custom_message
+            .clone()
+            .map(|m| format!("\n\n{}", m))
+            .unwrap_or_default();
+
+        format!(
+            r#"📊 *REPORTE GENERADO*
+
+*{}*
+_{}_
+
+{} *Formato:* {}
+📁 *Registros:* {}
+{}{}
+
+📥 *DESCARGAR REPORTE:*
+{}
+
+⚠️ _Este enlace expira en 24 horas._"#,
+            payload.report.title,
+            payload.report.code,
+            format_emoji,
+            format_label,
+            payload.data.total_records,
+            if !date_info.is_empty() {
+                format!("{}\n", date_info)
+            } else {
+                "".to_string()
+            },
+            custom_msg,
+            download_url
         )
     }
 

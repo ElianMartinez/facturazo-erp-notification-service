@@ -15,6 +15,10 @@ use crate::templates::erp_report_models::{ErpReportPayload, OutputFormat};
 use crate::templates::templates::ErpReportTemplate;
 use crate::templates::TypstTemplate;
 
+/// Maximum file size to attach directly to email (10 MB)
+/// Files larger than this will be uploaded to S3 and a download link sent instead
+const MAX_ATTACHMENT_SIZE_BYTES: usize = 10 * 1024 * 1024; // 10 MB
+
 /// Generate ERP report synchronously
 /// POST /api/v1/reports/generate/sync
 pub async fn generate_erp_report_sync(
@@ -501,16 +505,35 @@ async fn process_report_async(
         .await?;
 
     let processing_time = start.elapsed().as_millis();
+    let file_size = bytes.len();
     tracing::info!(
         "Async report {} completed: size={} bytes, time={}ms",
         report_id,
-        bytes.len(),
+        file_size,
         processing_time
     );
 
     // Handle delivery if configured
     if payload.delivery.is_some() {
-        if let Err(e) = deliver_report(&payload, &bytes, extension).await {
+        // Determine if we should attach the file or send a download link
+        // based on file size (10 MB threshold)
+        let download_url = if file_size > MAX_ATTACHMENT_SIZE_BYTES {
+            tracing::info!(
+                "File size {} bytes exceeds {} bytes threshold, sending download link instead of attachment",
+                file_size,
+                MAX_ATTACHMENT_SIZE_BYTES
+            );
+            Some(url.clone())
+        } else {
+            tracing::info!(
+                "File size {} bytes is within {} bytes threshold, attaching to email",
+                file_size,
+                MAX_ATTACHMENT_SIZE_BYTES
+            );
+            None
+        };
+
+        if let Err(e) = deliver_report(&payload, &bytes, extension, download_url.as_deref()).await {
             tracing::warn!("Delivery failed for report {}: {}", report_id, e);
         }
     }
@@ -519,10 +542,18 @@ async fn process_report_async(
 }
 
 /// Deliver report via configured channels
+///
+/// # Arguments
+/// * `payload` - The report payload with delivery options
+/// * `bytes` - The generated report bytes
+/// * `extension` - File extension (pdf, xlsx, csv)
+/// * `download_url` - Optional S3 download URL. If provided, sends link instead of attachment
+///                    (used when file size exceeds MAX_ATTACHMENT_SIZE_BYTES)
 async fn deliver_report(
     payload: &ErpReportPayload,
     bytes: &[u8],
     extension: &str,
+    download_url: Option<&str>,
 ) -> anyhow::Result<()> {
     use crate::infrastructure::notifications::ErpReportNotifierBuilder;
     use crate::templates::erp_report_models::DeliveryMethod;
@@ -600,8 +631,14 @@ async fn deliver_report(
             // Set file_name in output options if possible
             delivery_payload.output.file_name = Some(file_name);
 
+            // If we have a download URL (file too large for attachment), pass it to notifier
+            // Otherwise, the file will be attached directly
             notifier
-                .deliver_report(&delivery_payload, bytes.to_vec())
+                .deliver_report(
+                    &delivery_payload,
+                    bytes.to_vec(),
+                    download_url.map(|s| s.to_string()),
+                )
                 .await?;
         }
         _ => {} // Download/View don't need delivery

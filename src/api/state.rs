@@ -77,8 +77,32 @@ impl Default for AppConfig {
 
 impl ApiState {
     pub async fn new(config: AppConfig) -> anyhow::Result<Self> {
-        // Initialize S3
-        let s3_client = Arc::new(S3Client::new().await?);
+        // Initialize S3 - check for R2 config first, fallback to AWS
+        let s3_client = if let (Ok(endpoint), Ok(access_key), Ok(secret_key)) = (
+            std::env::var("S3_ENDPOINT"),
+            std::env::var("S3_ACCESS_KEY"),
+            std::env::var("S3_SECRET_KEY"),
+        ) {
+            // Extract account ID from Cloudflare R2 endpoint
+            // Format: https://{account_id}.r2.cloudflarestorage.com/...
+            let account_id = endpoint
+                .trim_start_matches("https://")
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .to_string();
+
+            tracing::info!(
+                "Initializing S3 client for Cloudflare R2. Endpoint: {}, Account: {}",
+                endpoint,
+                account_id
+            );
+
+            Arc::new(S3Client::new_for_r2(account_id, access_key, secret_key).await?)
+        } else {
+            tracing::info!("Initializing S3 client with AWS credentials from environment");
+            Arc::new(S3Client::new().await?)
+        };
 
         // Initialize template manager
         let template_manager = Arc::new(TemplateManager::new(
