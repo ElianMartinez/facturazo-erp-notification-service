@@ -169,7 +169,7 @@ impl ErpReportTemplate {
     }
 
     /// Generate table header row
-    /// Uses em units so sizes scale with base font size
+    /// Professional style with neutral blue-gray background
     fn generate_header_row(&self, columns: &[&ColumnDefinition]) -> String {
         columns
             .iter()
@@ -180,9 +180,9 @@ impl ErpReportTemplate {
                     ColumnAlign::Right => "right",
                 };
                 format!(
-                    "table.cell(align: {})[#text(weight: \"bold\", size: 0.9em)[{}]]",
+                    "table.cell(align: {}, fill: rgb(71, 85, 105))[#text(weight: \"bold\", size: 0.75em, fill: white)[{}]]",
                     align,
-                    utils::escape_typst(&col.label)
+                    utils::escape_typst(&col.label).to_uppercase()
                 )
             })
             .collect::<Vec<_>>()
@@ -190,7 +190,7 @@ impl ErpReportTemplate {
     }
 
     /// Generate a data row
-    /// Uses em units so sizes scale with base font size
+    /// Clean style with proper alignment
     fn generate_data_row(
         &self,
         row: &HashMap<String, serde_json::Value>,
@@ -209,25 +209,17 @@ impl ErpReportTemplate {
                     ColumnAlign::Right => "right",
                 };
 
-                let weight = if is_subtotal || col.highlight.is_some() {
-                    "\"bold\""
+                // Color based on highlight - neutral blue-gray tones
+                let (weight, color) = if col.highlight.as_ref().map(|h| h == "primary").unwrap_or(false) {
+                    ("\"bold\"", "rgb(59, 130, 246)")
+                } else if is_subtotal {
+                    ("\"bold\"", "rgb(71, 85, 105)")
                 } else {
-                    "\"regular\""
-                };
-
-                let color = if col
-                    .highlight
-                    .as_ref()
-                    .map(|h| h == "primary")
-                    .unwrap_or(false)
-                {
-                    ", fill: rgb(24, 144, 255)"
-                } else {
-                    ""
+                    ("\"regular\"", "rgb(30, 30, 30)")
                 };
 
                 format!(
-                    "table.cell(align: {})[#text(weight: {}, size: 0.8em{})[{}]]",
+                    "table.cell(align: {})[#text(weight: {}, size: 0.75em, fill: {})[{}]]",
                     align, weight, color, formatted
                 )
             })
@@ -272,54 +264,59 @@ impl ErpReportTemplate {
         cells.join(",\n    ")
     }
 
-    /// Generate a complete subtotal summary showing ALL numeric values
-    /// Used to show totals for hidden columns in print mode
-    fn generate_subtotal_summary(
+    /// Generate subtotal row as a regular table row with values in columns
+    /// Shows label in first column and values aligned with their respective columns
+    fn generate_subtotal_row_inline(
         &self,
         subtotal: &HashMap<String, serde_json::Value>,
-        all_columns: &[ColumnDefinition],
-        label: &str,
+        visible_columns: &[&ColumnDefinition],
+        _label: &str,
+        record_count: Option<i32>,
     ) -> String {
-        let totals: Vec<String> = all_columns
-            .iter()
-            .filter_map(|col| {
-                subtotal.get(&col.key).and_then(|value| {
-                    // Only show numeric values
+        let mut cells = Vec::new();
+        let mut is_first = true;
+
+        for col in visible_columns {
+            if is_first {
+                // First column: show label with record count
+                let label_text = if let Some(count) = record_count {
+                    format!("Registros: {}            Sub-Total", count)
+                } else {
+                    "Sub-Total".to_string()
+                };
+                cells.push(format!(
+                    "table.cell(align: left)[#text(weight: \"bold\", size: 0.75em, fill: rgb(59, 130, 246))[{}]]",
+                    label_text
+                ));
+                is_first = false;
+            } else {
+                // Other columns: show value if numeric, empty otherwise
+                let value = subtotal.get(&col.key);
+                let formatted = if let Some(v) = value {
                     match col.column_type {
                         ColumnType::Currency | ColumnType::Decimal | ColumnType::Integer => {
-                            let formatted = self.format_value(value, col);
-                            // Skip zero values for cleaner display
-                            if formatted == "0.00" || formatted == "0" {
-                                return None;
-                            }
-                            Some(format!(
-                                "[{}:], [#text(weight: \"bold\")[{}]]",
-                                col.label, formatted
-                            ))
+                            self.format_value(v, col)
                         }
-                        _ => None,
+                        _ => String::new(),
                     }
-                })
-            })
-            .collect();
+                } else {
+                    String::new()
+                };
 
-        if totals.is_empty() {
-            return String::new();
+                let align = match col.align.as_ref().unwrap_or(&ColumnAlign::Left) {
+                    ColumnAlign::Left => "left",
+                    ColumnAlign::Center => "center",
+                    ColumnAlign::Right => "right",
+                };
+
+                cells.push(format!(
+                    "table.cell(align: {})[#text(weight: \"bold\", size: 0.75em, fill: rgb(59, 130, 246))[{}]]",
+                    align, formatted
+                ));
+            }
         }
 
-        format!(
-            r#"table.cell(colspan: 999, fill: rgb(248, 250, 252), inset: 8pt)[
-    #grid(columns: (auto, 1fr), gutter: 3pt,
-      [#text(weight: "bold", size: 0.85em)[{}]],
-      [],
-    )
-    #grid(columns: (10em, auto), gutter: 3pt,
-      {}
-    )
-  ]"#,
-            utils::escape_typst(label),
-            totals.join(",\n      ")
-        )
+        cells.join(",\n    ")
     }
 
     /// Generate flat data table
@@ -343,10 +340,11 @@ impl ErpReportTemplate {
         format!(
             r#"#table(
   columns: ({}),
-  stroke: 0.5pt + rgb(220, 220, 220),
-  fill: (x, y) => if y == 0 {{ rgb(245, 245, 245) }} else if calc.odd(y) {{ rgb(252, 252, 252) }} else {{ white }},
-  inset: 5pt,
-  {},
+  stroke: 0.5pt + rgb(200, 200, 200),
+  inset: (x: 8pt, y: 6pt),
+  table.header(repeat: true,
+    {}
+  ),
   {}
 )"#,
             widths,
@@ -356,105 +354,129 @@ impl ErpReportTemplate {
     }
 
     /// Generate grouped data table
-    /// Shows data in visible columns, but subtotals show ALL numeric values
+    /// Each group is a separate table so headers repeat with group name on page breaks
     fn generate_grouped_table(
         &self,
         groups: &[ReportGroup],
         columns: &[&ColumnDefinition],
         grouping: &Option<GroupingConfig>,
-        all_columns: &[ColumnDefinition],
+        _all_columns: &[ColumnDefinition],
     ) -> String {
         if groups.is_empty() {
             return self.generate_empty_message();
         }
 
         let widths = self.generate_column_widths(columns);
-        let header = self.generate_header_row(columns);
         let show_subtotals = grouping.as_ref().map(|g| g.show_subtotals).unwrap_or(false);
-        let subtotal_label = grouping
-            .as_ref()
-            .and_then(|g| g.subtotal_label.clone())
-            .unwrap_or_else(|| "Subtotal".to_string());
 
-        let mut all_rows = Vec::new();
+        let mut tables = Vec::new();
 
         for group in groups {
-            // Group header
-            all_rows.push(format!(
-                "table.cell(colspan: {}, fill: rgb(230, 240, 250))[#text(weight: \"bold\", size: 0.9em)[{} ({} registros)]]",
-                columns.len(),
-                utils::escape_typst(&group.label),
-                group.record_count
-            ));
+            // Generate header row with group name included
+            let header_with_group = self.generate_header_row_with_group(columns, &group.label);
 
             // Data rows
-            for row in &group.rows {
-                all_rows.push(self.generate_data_row(row, columns, false));
-            }
+            let data_rows: Vec<String> = group
+                .rows
+                .iter()
+                .map(|row| self.generate_data_row(row, columns, false))
+                .collect();
 
-            // Subtotal - use full summary to show all values
-            if show_subtotals {
+            // Subtotal row
+            let subtotal_row = if show_subtotals {
                 if let Some(ref subtotal) = group.subtotal {
-                    let summary =
-                        self.generate_subtotal_summary(subtotal, all_columns, &subtotal_label);
-                    if !summary.is_empty() {
-                        all_rows.push(summary);
-                    }
+                    format!(
+                        ",\n  {}",
+                        self.generate_subtotal_row_inline(subtotal, columns, &group.label, Some(group.record_count))
+                    )
+                } else {
+                    String::new()
                 }
-            }
+            } else {
+                String::new()
+            };
+
+            tables.push(format!(
+                r#"#table(
+  columns: ({}),
+  stroke: 0.5pt + rgb(200, 200, 200),
+  inset: (x: 8pt, y: 6pt),
+  table.header(repeat: true,
+    {}
+  ),
+  {}{}
+)"#,
+                widths,
+                header_with_group,
+                data_rows.join(",\n  "),
+                subtotal_row
+            ));
         }
 
-        format!(
-            r#"#table(
-  columns: ({}),
-  stroke: 0.5pt + rgb(220, 220, 220),
-  fill: (x, y) => if y == 0 {{ rgb(245, 245, 245) }} else {{ white }},
-  inset: 5pt,
-  {},
-  {}
-)"#,
-            widths,
-            header,
-            all_rows.join(",\n  ")
-        )
+        tables.join("\n#v(0.5em)\n")
+    }
+
+    /// Generate header row with group name on top
+    fn generate_header_row_with_group(&self, columns: &[&ColumnDefinition], group_label: &str) -> String {
+        // First: group name spanning all columns
+        let group_row = format!(
+            "table.cell(colspan: {}, fill: white, inset: (x: 6pt, y: 6pt))[#text(weight: \"bold\", size: 0.8em)[{}]]",
+            columns.len(),
+            utils::escape_typst(group_label)
+        );
+
+        // Then: column headers
+        let column_headers: Vec<String> = columns
+            .iter()
+            .map(|col| {
+                let align = match col.align.as_ref().unwrap_or(&ColumnAlign::Left) {
+                    ColumnAlign::Left => "left",
+                    ColumnAlign::Center => "center",
+                    ColumnAlign::Right => "right",
+                };
+                format!(
+                    "table.cell(align: {}, fill: rgb(71, 85, 105))[#text(weight: \"bold\", size: 0.75em, fill: white)[{}]]",
+                    align,
+                    utils::escape_typst(&col.label).to_uppercase()
+                )
+            })
+            .collect();
+
+        format!("{},\n    {}", group_row, column_headers.join(",\n    "))
     }
 
     /// Generate hierarchical grouped data table
-    /// Shows data in visible columns, but subtotals show ALL numeric values
+    /// Each group is a separate table so headers repeat with group name on page breaks
     fn generate_hierarchical_table(
         &self,
         groups: &[ReportGroup],
         columns: &[&ColumnDefinition],
         grouping: &Option<GroupingConfig>,
-        all_columns: &[ColumnDefinition],
+        _all_columns: &[ColumnDefinition],
     ) -> String {
         if groups.is_empty() {
             return self.generate_empty_message();
         }
 
         let widths = self.generate_column_widths(columns);
-        let header = self.generate_header_row(columns);
         let show_subtotals = grouping.as_ref().map(|g| g.show_subtotals).unwrap_or(false);
 
-        let mut all_rows = Vec::new();
+        let mut tables = Vec::new();
 
         for group in groups {
-            // Level 0 group header
-            all_rows.push(format!(
-                "table.cell(colspan: {}, fill: rgb(200, 220, 240))[#text(weight: \"bold\", size: 1em)[{}]]",
-                columns.len(),
-                utils::escape_typst(&group.label)
-            ));
+            // Generate header row with group name included
+            let header_with_group = self.generate_header_row_with_group(columns, &group.label);
+
+            let mut all_rows = Vec::new();
 
             // Process subgroups if they exist
             if let Some(ref sub_groups) = group.sub_groups {
                 for sub_group in sub_groups {
-                    // Level 1 group header
+                    // Level 1 group header - indented
                     all_rows.push(format!(
-                        "table.cell(colspan: {}, fill: rgb(235, 245, 255))[#h(1em)#text(weight: \"semibold\", size: 0.9em)[{} ({})]]",
+                        "table.cell(colspan: {}, fill: white, inset: (x: 12pt, y: 6pt))[#text(weight: \"semibold\", size: 0.75em)[{}]]",
                         columns.len(),
-                        utils::escape_typst(&sub_group.label),
-                        sub_group.record_count
+                        utils::escape_typst(&sub_group.label)
                     ));
 
                     // Data rows
@@ -462,17 +484,15 @@ impl ErpReportTemplate {
                         all_rows.push(self.generate_data_row(row, columns, false));
                     }
 
-                    // Subgroup subtotal - use full summary to show all values
+                    // Subgroup subtotal
                     if show_subtotals {
                         if let Some(ref subtotal) = sub_group.subtotal {
-                            let summary = self.generate_subtotal_summary(
+                            all_rows.push(self.generate_subtotal_row_inline(
                                 subtotal,
-                                all_columns,
-                                &format!("Subtotal {}", &sub_group.label),
-                            );
-                            if !summary.is_empty() {
-                                all_rows.push(summary);
-                            }
+                                columns,
+                                &sub_group.label,
+                                Some(sub_group.record_count),
+                            ));
                         }
                     }
                 }
@@ -483,34 +503,35 @@ impl ErpReportTemplate {
                 }
             }
 
-            // Group subtotal - use full summary to show all values
+            // Group subtotal
             if show_subtotals {
                 if let Some(ref subtotal) = group.subtotal {
-                    let summary = self.generate_subtotal_summary(
+                    all_rows.push(self.generate_subtotal_row_inline(
                         subtotal,
-                        all_columns,
-                        &format!("Total {}", &group.label),
-                    );
-                    if !summary.is_empty() {
-                        all_rows.push(summary);
-                    }
+                        columns,
+                        &group.label,
+                        Some(group.record_count),
+                    ));
                 }
             }
-        }
 
-        format!(
-            r#"#table(
+            tables.push(format!(
+                r#"#table(
   columns: ({}),
-  stroke: 0.5pt + rgb(220, 220, 220),
-  fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
-  inset: 5pt,
-  {},
+  stroke: 0.5pt + rgb(200, 200, 200),
+  inset: (x: 8pt, y: 6pt),
+  table.header(repeat: true,
+    {}
+  ),
   {}
 )"#,
-            widths,
-            header,
-            all_rows.join(",\n  ")
-        )
+                widths,
+                header_with_group,
+                all_rows.join(",\n  ")
+            ));
+        }
+
+        tables.join("\n#v(0.5em)\n")
     }
 
     /// Generate statement table with running balance
@@ -580,26 +601,22 @@ impl ErpReportTemplate {
     }
 
     /// Generate grand total section
-    /// Shows ALL totals from the data, not just visible columns
+    /// Shows totals in a clean table format
     fn generate_grand_total(
         &self,
         grand_total: &HashMap<String, serde_json::Value>,
         all_columns: &[ColumnDefinition],
         total_records: i32,
     ) -> String {
-        // Use ALL columns (not just visible) to show complete totals
-        let all_totals: Vec<String> = all_columns
+        // Use ALL columns to show complete totals
+        let all_totals: Vec<(String, String)> = all_columns
             .iter()
             .filter_map(|col| {
                 grand_total.get(&col.key).and_then(|value| {
-                    // Only show numeric values (Currency, Decimal, Integer)
                     match col.column_type {
                         ColumnType::Currency | ColumnType::Decimal | ColumnType::Integer => {
                             let formatted = self.format_value(value, col);
-                            Some(format!(
-                                "[{}:], [#text(weight: \"bold\")[{}]]",
-                                col.label, formatted
-                            ))
+                            Some((col.label.clone(), formatted))
                         }
                         _ => None,
                     }
@@ -611,21 +628,51 @@ impl ErpReportTemplate {
             return String::new();
         }
 
+        // Build table rows for grand total
+        let col_count = all_totals.len();
+        let widths = std::iter::repeat("1fr".to_string())
+            .take(col_count)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let headers: String = all_totals
+            .iter()
+            .map(|(lbl, _)| {
+                format!(
+                    "table.cell(fill: rgb(71, 85, 105), align: center)[#text(weight: \"bold\", size: 0.75em, fill: white)[{}]]",
+                    lbl.to_uppercase()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n    ");
+
+        let values: String = all_totals
+            .iter()
+            .map(|(_, val)| {
+                format!(
+                    "table.cell(align: center)[#text(weight: \"bold\", size: 0.85em, fill: rgb(59, 130, 246))[{}]]",
+                    val
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n    ");
+
         format!(
             r#"
-#v(1.2em)
-#rect(width: 100%, fill: rgb(240, 245, 250), stroke: 1.5pt + rgb(24, 144, 255), radius: 4pt, inset: 1em)[
-  #grid(columns: (auto, 1fr), gutter: 5pt,
-    [#text(weight: "bold", size: 1.2em, fill: rgb(24, 144, 255))[TOTAL GENERAL]],
-    [#text(size: 1em, fill: gray)[({} registros)]],
-  )
-  #v(0.8em)
-  #grid(columns: (15em, auto), gutter: 4pt,
-    {}
-  )
-]"#,
+#v(1em)
+#text(weight: "bold", size: 0.9em)[TOTAL GENERAL ({} registros)]
+#v(0.5em)
+#table(
+  columns: ({}),
+  stroke: 0.5pt + rgb(200, 200, 200),
+  inset: (x: 8pt, y: 6pt),
+  {},
+  {}
+)"#,
             total_records,
-            all_totals.join(",\n    ")
+            widths,
+            headers,
+            values
         )
     }
 
