@@ -472,6 +472,7 @@ mod tests {
         }
 
         ErpReportPayload {
+            correlation_id: None,
             document_type: "REPORT".to_string(),
             tenant_id: 1,
             user_id: 1,

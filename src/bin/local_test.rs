@@ -820,6 +820,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
         document_type: "REPORT".to_string(),
         tenant_id: 1,
         user_id: 1,
+        correlation_id: None,
         report: ReportInfo {
             code: "NCF_SUMMARY".to_string(),
             variant: Some("DETAILED".to_string()),
@@ -1035,6 +1036,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
         document_type: "REPORT".to_string(),
         tenant_id: 1,
         user_id: 1,
+        correlation_id: None,
         report: ReportInfo {
             code: "AR_BALANCE_ANALYSIS".to_string(),
             variant: Some("DETAILED".to_string()),
@@ -1249,6 +1251,7 @@ fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpR
         document_type: "REPORT".to_string(),
         tenant_id: 1,
         user_id: 1,
+        correlation_id: None,
         report: ReportInfo {
             code: variant.to_uppercase(),
             variant: None,

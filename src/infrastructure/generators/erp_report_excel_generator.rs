@@ -47,6 +47,18 @@ impl ErpReportExcelGenerator {
         // Skip a row
         current_row += 1;
 
+        // Remember where the data section starts (for freeze panes)
+        // For flat data: freeze after column headers
+        // For grouped data: don't freeze (groups have their own headers)
+        let freeze_row = match payload.data.structure_type {
+            DataStructureType::Flat | DataStructureType::Statement => {
+                // Freeze after the column headers row
+                Some(current_row + 1)
+            }
+            // Don't freeze for grouped/hierarchical - each group has its own header
+            DataStructureType::Grouped | DataStructureType::HierarchicalGrouped => None,
+        };
+
         // Write data based on structure type
         current_row = match payload.data.structure_type {
             DataStructureType::Flat => {
@@ -77,11 +89,11 @@ impl ErpReportExcelGenerator {
         // Auto-fit columns
         Self::auto_fit_columns(worksheet, &payload.metadata.columns)?;
 
-        // Freeze header rows
-        worksheet.set_freeze_panes(
-            current_row.saturating_sub(payload.data.total_records as u32),
-            0,
-        )?;
+        // Freeze header rows only for flat/statement data
+        // For grouped data, freezing doesn't work well because each group has its own header
+        if let Some(row) = freeze_row {
+            worksheet.set_freeze_panes(row, 0)?;
+        }
 
         Ok(workbook.save_to_buffer()?)
     }
@@ -132,13 +144,36 @@ impl ErpReportExcelGenerator {
                 .set_align(FormatAlign::Center),
             group_header: Format::new()
                 .set_bold()
+                .set_font_size(11)
                 .set_background_color(Color::RGB(0xD6DCE4))
                 .set_border(FormatBorder::Thin),
+            // Subgroup header - lighter gray, slightly smaller
+            subgroup_header: Format::new()
+                .set_bold()
+                .set_font_size(10)
+                .set_background_color(Color::RGB(0xE8E8E8))
+                .set_border(FormatBorder::Thin),
+            // Main group subtotal (level 0) - darker green, bold
             subtotal: Format::new()
+                .set_bold()
+                .set_font_size(10)
+                .set_background_color(Color::RGB(0xC6EFCE))
+                .set_font_color(Color::RGB(0x006100))
+                .set_border(FormatBorder::Thin),
+            subtotal_currency: Format::new()
+                .set_bold()
+                .set_font_size(10)
+                .set_background_color(Color::RGB(0xC6EFCE))
+                .set_font_color(Color::RGB(0x006100))
+                .set_border(FormatBorder::Thin)
+                .set_align(FormatAlign::Right)
+                .set_num_format("#,##0.00"),
+            // Subgroup subtotal (level 1+) - lighter green
+            subgroup_subtotal: Format::new()
                 .set_bold()
                 .set_background_color(Color::RGB(0xE2EFDA))
                 .set_border(FormatBorder::Thin),
-            subtotal_currency: Format::new()
+            subgroup_subtotal_currency: Format::new()
                 .set_bold()
                 .set_background_color(Color::RGB(0xE2EFDA))
                 .set_border(FormatBorder::Thin)
@@ -359,7 +394,7 @@ impl ErpReportExcelGenerator {
             row += 1;
         }
 
-        // Write subtotal if present
+        // Write subtotal if present (level 0 for simple grouped data)
         if let Some(ref subtotal) = group.subtotal {
             let subtotal_label = grouping
                 .as_ref()
@@ -367,7 +402,15 @@ impl ErpReportExcelGenerator {
                 .map(|s| s.as_str())
                 .unwrap_or("Subtotal");
 
-            Self::write_subtotal_row(worksheet, columns, subtotal, subtotal_label, formats, row)?;
+            Self::write_subtotal_row(
+                worksheet,
+                columns,
+                subtotal,
+                subtotal_label,
+                formats,
+                row,
+                0,
+            )?;
             row += 1;
         }
 
@@ -421,14 +464,14 @@ impl ErpReportExcelGenerator {
         let indent = "  ".repeat(level as usize);
         let label = format!("{}{}", indent, group.label);
 
-        worksheet.merge_range(
-            row,
-            0,
-            row,
-            (col_count - 1) as u16,
-            &label,
-            &formats.group_header,
-        )?;
+        // Select header format based on level
+        let header_format = if level == 0 {
+            &formats.group_header
+        } else {
+            &formats.subgroup_header
+        };
+
+        worksheet.merge_range(row, 0, row, (col_count - 1) as u16, &label, header_format)?;
         row += 1;
 
         // Write subgroups if present
@@ -454,7 +497,7 @@ impl ErpReportExcelGenerator {
         // Write subtotal if present
         if let Some(ref subtotal) = group.subtotal {
             let label = format!("{}Subtotal {}", indent, group.label);
-            Self::write_subtotal_row(worksheet, columns, subtotal, &label, formats, row)?;
+            Self::write_subtotal_row(worksheet, columns, subtotal, &label, formats, row, level)?;
             row += 1;
         }
 
@@ -584,9 +627,20 @@ impl ErpReportExcelGenerator {
         label: &str,
         formats: &ExcelFormats,
         row: u32,
+        level: u32,
     ) -> Result<()> {
+        // Select format based on level (0 = main group, 1+ = subgroup)
+        let (label_format, currency_format) = if level == 0 {
+            (&formats.subtotal, &formats.subtotal_currency)
+        } else {
+            (
+                &formats.subgroup_subtotal,
+                &formats.subgroup_subtotal_currency,
+            )
+        };
+
         // Write label in first column
-        worksheet.write_string_with_format(row, 0, label, &formats.subtotal)?;
+        worksheet.write_string_with_format(row, 0, label, label_format)?;
 
         // Write subtotal values
         for (col_idx, column) in columns.iter().enumerate().skip(1) {
@@ -597,15 +651,10 @@ impl ErpReportExcelGenerator {
             let col = col_idx as u16;
             if let Some(value) = subtotal.get(&column.key) {
                 if let Some(num) = value.as_f64() {
-                    worksheet.write_number_with_format(
-                        row,
-                        col,
-                        num,
-                        &formats.subtotal_currency,
-                    )?;
+                    worksheet.write_number_with_format(row, col, num, currency_format)?;
                 }
             } else {
-                worksheet.write_string_with_format(row, col, "", &formats.subtotal)?;
+                worksheet.write_string_with_format(row, col, "", label_format)?;
             }
         }
         Ok(())
@@ -700,8 +749,14 @@ struct ExcelFormats {
     percentage: Format,
     date: Format,
     group_header: Format,
+    /// Subgroup header (level 1+) - lighter color
+    subgroup_header: Format,
+    /// Subtotal for main groups (level 0) - darker green
     subtotal: Format,
     subtotal_currency: Format,
+    /// Subtotal for subgroups (level 1+) - lighter green
+    subgroup_subtotal: Format,
+    subgroup_subtotal_currency: Format,
     grand_total: Format,
     grand_total_currency: Format,
 }
@@ -727,6 +782,7 @@ mod tests {
         }
 
         ErpReportPayload {
+            correlation_id: None,
             document_type: "REPORT".to_string(),
             tenant_id: 1,
             user_id: 1,

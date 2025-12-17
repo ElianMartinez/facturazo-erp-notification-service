@@ -9,6 +9,10 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ErpReportPayload {
+    /// Correlation ID for distributed tracing across services
+    #[serde(alias = "correlation_id")]
+    pub correlation_id: Option<String>,
+
     /// Document type identifier
     #[serde(default = "default_document_type")]
     pub document_type: String,
