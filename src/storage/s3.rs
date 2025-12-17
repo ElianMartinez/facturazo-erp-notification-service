@@ -43,6 +43,7 @@ impl S3Client {
         );
 
         let config = Config::builder()
+            .behavior_version_latest()
             .region(Region::new("auto"))
             .endpoint_url(format!("https://{}.r2.cloudflarestorage.com", account_id))
             .credentials_provider(credentials)
