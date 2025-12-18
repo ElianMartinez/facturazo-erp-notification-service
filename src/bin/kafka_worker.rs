@@ -22,7 +22,7 @@ use tracing::{error, info, warn, Instrument};
 use pdf_services::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use pdf_services::infrastructure::cache::CacheService;
 use pdf_services::infrastructure::generators::GeneratorFactory;
-use pdf_services::infrastructure::notifications::EmailService;
+use pdf_services::infrastructure::notifications::{EmailService, EvolutionApiClient};
 use pdf_services::infrastructure::storage::StorageService;
 use pdf_services::kafka::erp_messages::ErpIntegrationEvent;
 use pdf_services::kafka::handlers::{KafkaHandler, KafkaMessage};
@@ -147,18 +147,34 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Initialize WhatsApp/EvolutionAPI service if configured
+    let whatsapp_service = match (
+        env::var("EVOLUTION_API_URL").ok(),
+        env::var("EVOLUTION_API_KEY").ok(),
+        env::var("EVOLUTION_INSTANCE").ok(),
+    ) {
+        (Some(url), Some(api_key), Some(instance)) => {
+            info!("WhatsApp service configured with EvolutionAPI at: {}", url);
+            Some(Arc::new(EvolutionApiClient::new(url, api_key, instance)))
+        }
+        _ => {
+            warn!("WhatsApp service not configured - EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE required");
+            None
+        }
+    };
+
     // Initialize orchestrators
     let document_orchestrator = Arc::new(DocumentOrchestrator::new(
         generator_factory.clone(),
         storage_service.clone(),
         cache_service.clone(),
         email_service.clone(),
-        None, // whatsapp service
+        whatsapp_service.clone(),
     ));
 
     let notification_orchestrator = Arc::new(NotificationOrchestrator::new(
         email_service,
-        None, // whatsapp service
+        whatsapp_service,
         cache_service.clone(),
     ));
 

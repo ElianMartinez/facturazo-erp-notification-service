@@ -147,17 +147,35 @@ impl ErpIntegrationEvent {
                 }))
             }
 
-            "send_notification" => Ok(KafkaMessage::SendNotification(SendNotificationRequest {
-                request_id: self.request_id,
-                tenant_id: tenant_id_str,
-                channel: self.channel.unwrap_or_else(|| "email".to_string()),
-                recipient: self.recipient.unwrap_or_default(),
-                subject: self.subject,
-                message: self.message.unwrap_or_default(),
-                html_body: None,
-                document_id: self.document_id,
-                callback_url: self.callback_url,
-            })),
+            "send_notification" => {
+                // Check if notification info is provided (from NotificationService with embedded notification)
+                if let Some(notif) = self.notification {
+                    Ok(KafkaMessage::SendNotification(SendNotificationRequest {
+                        request_id: notif.request_id,
+                        tenant_id: notif.tenant_id.to_string(),
+                        channel: notif.channel,
+                        recipient: notif.recipient,
+                        subject: notif.subject,
+                        message: notif.message,
+                        html_body: notif.html_body,
+                        document_id: None,
+                        callback_url: self.callback_url,
+                    }))
+                } else {
+                    // Fallback to top-level fields (legacy format)
+                    Ok(KafkaMessage::SendNotification(SendNotificationRequest {
+                        request_id: self.request_id,
+                        tenant_id: tenant_id_str,
+                        channel: self.channel.unwrap_or_else(|| "email".to_string()),
+                        recipient: self.recipient.unwrap_or_default(),
+                        subject: self.subject,
+                        message: self.message.unwrap_or_default(),
+                        html_body: None,
+                        document_id: self.document_id,
+                        callback_url: self.callback_url,
+                    }))
+                }
+            }
 
             "batch_notify" => {
                 let recipients = self
@@ -177,6 +195,25 @@ impl ErpIntegrationEvent {
                     document_id: self.document_id,
                     parallel: self.parallel.unwrap_or(true),
                     concurrency: self.concurrency,
+                    callback_url: self.callback_url,
+                }))
+            }
+
+            // notify_only: Legacy alias for send_notification (backward compatibility)
+            "notify_only" => {
+                let notif = self
+                    .notification
+                    .ok_or_else(|| anyhow::anyhow!("notify_only requires notification info"))?;
+
+                Ok(KafkaMessage::SendNotification(SendNotificationRequest {
+                    request_id: notif.request_id,
+                    tenant_id: notif.tenant_id.to_string(),
+                    channel: notif.channel,
+                    recipient: notif.recipient,
+                    subject: notif.subject,
+                    message: notif.message,
+                    html_body: notif.html_body,
+                    document_id: None,
                     callback_url: self.callback_url,
                 }))
             }
