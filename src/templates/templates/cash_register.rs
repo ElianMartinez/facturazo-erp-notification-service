@@ -236,7 +236,7 @@ impl CashRegisterTemplate {
             r#"#set document(title: "Cuadre de Caja - {}", author: "{}")
 #set page(
   paper: "a4",
-  margin: (top: 12mm, bottom: 12mm, left: 15mm, right: 15mm),
+  margin: (top: 10mm, bottom: 10mm, left: 12mm, right: 12mm),
 )
 #set text(font: "Roboto", size: 10pt, fill: rgb("1E293B"))
 
@@ -261,27 +261,27 @@ impl CashRegisterTemplate {
   ]
 )
 
-#v(8pt)
+#v(2pt)
 #line(length: 100%, stroke: 2pt + rgb("2563EB"))
-#v(12pt)
+#v(6pt)
 
 // ============================================
 // INFO BAR
 // ============================================
 #grid(
   columns: (1fr, 1fr, 1fr),
-  gutter: 12pt,
+  gutter: 8pt,
   // Cajero
   box(
     width: 100%,
     fill: rgb("F8FAFC"),
     stroke: 1pt + rgb("E2E8F0"),
     radius: 6pt,
-    inset: 10pt,
+    inset: 8pt,
     [
       #text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[CAJERO]
-      #v(3pt)
-      #text(size: 12pt, weight: "semibold")[{}]
+      #v(2pt)
+      #text(size: 11pt, weight: "semibold")[{}]
     ]
   ),
   // Transacciones
@@ -290,11 +290,11 @@ impl CashRegisterTemplate {
     fill: rgb("F8FAFC"),
     stroke: 1pt + rgb("E2E8F0"),
     radius: 6pt,
-    inset: 10pt,
+    inset: 8pt,
     [
       #text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[TRANSACCIONES]
-      #v(3pt)
-      #text(size: 12pt, weight: "semibold")[{}]
+      #v(2pt)
+      #text(size: 11pt, weight: "semibold")[{}]
     ]
   ),
   // Estado
@@ -303,23 +303,24 @@ impl CashRegisterTemplate {
     fill: rgb("F8FAFC"),
     stroke: 1pt + rgb("E2E8F0"),
     radius: 6pt,
-    inset: 10pt,
+    inset: 8pt,
     [
       #text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[ESTADO]
-      #v(3pt)
+      #v(2pt)
       {}
     ]
   ),
 )
 
-#v(15pt)
+#v(8pt)
 
 // ============================================
 // MAIN CONTENT - TWO COLUMNS
 // ============================================
 #grid(
   columns: (1fr, 1fr),
-  gutter: 18pt,
+  gutter: 12pt,
+  align: top,
 
   // ========== LEFT COLUMN ==========
   [
@@ -327,12 +328,12 @@ impl CashRegisterTemplate {
     #text(size: 10pt, weight: "bold")[INGRESOS]
     #h(8pt)
     #line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
-    #v(8pt)
+    #v(3pt)
 
     #table(
       columns: (1fr, auto, auto),
       stroke: 1pt + rgb("E2E8F0"),
-      inset: 9pt,
+      inset: 7pt,
       fill: (col, row) => if row == 0 {{ rgb("F8FAFC") }} else {{ white }},
       [#text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[CONCEPTO]],
       [#text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[CANT.]],
@@ -340,33 +341,33 @@ impl CashRegisterTemplate {
 {}
     )
 
-    #v(8pt)
+    #v(3pt)
     #box(
       width: 100%,
       fill: rgb("2563EB"),
       radius: 4pt,
-      inset: 10pt,
+      inset: 6pt,
       [
         #grid(
           columns: (1fr, auto),
-          [#text(size: 10pt, weight: "semibold", fill: white)[TOTAL INGRESOS]],
-          [#text(size: 14pt, weight: "bold", fill: white)[{}]]
+          [#text(size: 9pt, weight: "semibold", fill: white)[TOTAL INGRESOS]],
+          [#text(size: 12pt, weight: "bold", fill: white)[{}]]
         )
       ]
     )
 
-    #v(15pt)
+    #v(8pt)
 
     // EGRESOS
     #text(size: 10pt, weight: "bold")[EGRESOS]
     #h(8pt)
     #line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
-    #v(8pt)
+    #v(3pt)
 
     #table(
       columns: (1fr, auto, auto),
       stroke: 1pt + rgb("E2E8F0"),
-      inset: 9pt,
+      inset: 7pt,
       fill: (col, row) => if row == 0 {{ rgb("F8FAFC") }} else {{ white }},
       [#text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[CONCEPTO]],
       [#text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[CANT.]],
@@ -374,17 +375,17 @@ impl CashRegisterTemplate {
 {}
     )
 
-    #v(8pt)
+    #v(3pt)
     #box(
       width: 100%,
       fill: rgb("475569"),
       radius: 4pt,
-      inset: 10pt,
+      inset: 6pt,
       [
         #grid(
           columns: (1fr, auto),
-          [#text(size: 10pt, weight: "semibold", fill: white)[TOTAL EGRESOS]],
-          [#text(size: 14pt, weight: "bold", fill: white)[{}]]
+          [#text(size: 9pt, weight: "semibold", fill: white)[TOTAL EGRESOS]],
+          [#text(size: 12pt, weight: "bold", fill: white)[{}]]
         )
       ]
     )
@@ -401,54 +402,54 @@ impl CashRegisterTemplate {
         #box(
           width: 100%,
           fill: white,
-          inset: 10pt,
+          inset: 6pt,
           [#text(size: 10pt, weight: "bold")[RESUMEN GENERAL]]
         )
         #line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
         #box(
           width: 100%,
           fill: rgb("F8FAFC"),
-          inset: 10pt,
+          inset: 6pt,
           [
             #grid(
               columns: (1fr, auto),
-              row-gutter: 7pt,
-              [#text(size: 10pt, fill: rgb("64748B"))[Total Ingresos]],
-              [#text(size: 10pt, weight: "semibold")[{}]],
-              [#text(size: 10pt, fill: rgb("64748B"))[Total Egresos]],
-              [#text(size: 10pt, weight: "semibold")[{}]],
+              row-gutter: 4pt,
+              [#text(size: 9pt, fill: rgb("64748B"))[Total Ingresos]],
+              [#text(size: 9pt, weight: "semibold")[{}]],
+              [#text(size: 9pt, fill: rgb("64748B"))[Total Egresos]],
+              [#text(size: 9pt, weight: "semibold")[{}]],
             )
-            #v(4pt)
+            #v(2pt)
             #box(
               width: 100%,
               fill: rgb("EFF6FF"),
               radius: 4pt,
-              inset: 10pt,
+              inset: 6pt,
               [
                 #grid(
                   columns: (1fr, auto),
-                  [#text(size: 10pt, weight: "semibold")[Total a Cuadrar]],
-                  [#text(size: 12pt, weight: "bold", fill: rgb("2563EB"))[{}]]
+                  [#text(size: 9pt, weight: "semibold")[Total a Cuadrar]],
+                  [#text(size: 11pt, weight: "bold", fill: rgb("2563EB"))[{}]]
                 )
               ]
             )
-            #v(4pt)
+            #v(2pt)
             #grid(
               columns: (1fr, auto),
-              [#text(size: 10pt, fill: rgb("64748B"))[Total en Caja]],
-              [#text(size: 10pt, weight: "semibold")[{}]],
+              [#text(size: 9pt, fill: rgb("64748B"))[Total en Caja]],
+              [#text(size: 9pt, weight: "semibold")[{}]],
             )
           ]
         )
       ]
     )
 
-    #v(15pt)
+    #v(8pt)
 {}
   ]
 )
 
-#v(18pt)
+#v(8pt)
 
 // ============================================
 // CUADRE POR MÉTODO DE PAGO
@@ -456,12 +457,12 @@ impl CashRegisterTemplate {
 #text(size: 10pt, weight: "bold")[CUADRE POR MÉTODO DE PAGO]
 #h(8pt)
 #line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
-#v(8pt)
+#v(3pt)
 
 #table(
   columns: (1fr, 1fr, 1fr, auto),
   stroke: 1pt + rgb("E2E8F0"),
-  inset: 9pt,
+  inset: 7pt,
   fill: (col, row) => if row == 0 {{ rgb("F8FAFC") }} else {{ white }},
   [#text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[MÉTODO]],
   [#align(center)[#text(size: 8pt, weight: "semibold", fill: rgb("64748B"))[SISTEMA]]],
@@ -474,7 +475,7 @@ impl CashRegisterTemplate {
 #box(
   width: 100%,
   fill: rgb("2563EB"),
-  inset: 9pt,
+  inset: 7pt,
   [
     #grid(
       columns: (1fr, 1fr, 1fr, auto),
@@ -486,7 +487,7 @@ impl CashRegisterTemplate {
   ]
 )
 
-#v(16pt)
+#v(8pt)
 
 // ============================================
 // BALANCE FINAL
@@ -500,12 +501,12 @@ impl CashRegisterTemplate {
     #box(
       width: 100%,
       fill: rgb("1E293B"),
-      inset: 12pt,
+      inset: 8pt,
       [
         #grid(
           columns: (1fr, auto),
-          [#text(size: 12pt, weight: "semibold", fill: white)[BALANCE FINAL]],
-          [#text(size: 26pt, weight: "bold", fill: rgb("{}"))[{}{}]]
+          [#text(size: 11pt, weight: "semibold", fill: white)[BALANCE FINAL]],
+          [#text(size: 20pt, weight: "bold", fill: rgb("{}"))[{}{}]]
         )
       ]
     )
@@ -514,35 +515,35 @@ impl CashRegisterTemplate {
       width: 100%,
       fill: rgb("F8FAFC"),
       stroke: (left: 1pt + rgb("E2E8F0"), right: 1pt + rgb("E2E8F0"), bottom: 1pt + rgb("E2E8F0")),
-      inset: 10pt,
+      inset: 6pt,
       [
         #grid(
           columns: (1fr, 1fr, 1fr),
           [
             #box[
-              #box(width: 8pt, height: 8pt, fill: rgb("2563EB"), radius: 50%)
-              #h(6pt)
-              #text(size: 9pt, fill: rgb("64748B"))[Sistema:]
+              #box(width: 6pt, height: 6pt, fill: rgb("2563EB"), radius: 50%)
               #h(4pt)
-              #text(size: 9pt, weight: "semibold")[{}]
+              #text(size: 8pt, fill: rgb("64748B"))[Sistema:]
+              #h(3pt)
+              #text(size: 8pt, weight: "semibold")[{}]
             ]
           ],
           [
             #box[
-              #box(width: 8pt, height: 8pt, fill: rgb("475569"), radius: 50%)
-              #h(6pt)
-              #text(size: 9pt, fill: rgb("64748B"))[En Caja:]
+              #box(width: 6pt, height: 6pt, fill: rgb("475569"), radius: 50%)
               #h(4pt)
-              #text(size: 9pt, weight: "semibold")[{}]
+              #text(size: 8pt, fill: rgb("64748B"))[En Caja:]
+              #h(3pt)
+              #text(size: 8pt, weight: "semibold")[{}]
             ]
           ],
           [
             #align(right)[
               #box(
                 fill: rgb("{}"),
-                radius: 12pt,
-                inset: (x: 10pt, y: 4pt),
-                [#text(size: 9pt, weight: "semibold", fill: rgb("{}"))[{}]]
+                radius: 10pt,
+                inset: (x: 8pt, y: 3pt),
+                [#text(size: 8pt, weight: "semibold", fill: rgb("{}"))[{}]]
               )
             ]
           ]
@@ -552,13 +553,13 @@ impl CashRegisterTemplate {
   ]
 )
 
-#v(20pt)
+#v(8pt)
 
 // ============================================
 // FOOTER
 // ============================================
 #line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
-#v(8pt)
+#v(3pt)
 #grid(
   columns: (1fr, auto),
   [#text(size: 8pt, fill: rgb("64748B"))[Documento generado por {} · Sistema de Gestión]],
