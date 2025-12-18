@@ -14,6 +14,7 @@ use uuid::Uuid;
 pub mod invoice_generator;
 pub mod qr_generator;
 pub mod quotation_generator;
+pub mod receipt_generator;
 pub mod report_generator;
 pub mod typst_generator;
 
@@ -34,6 +35,7 @@ pub use excel_generator::ExcelGenerator;
 pub use invoice_generator::InvoiceGenerator;
 pub use qr_generator::QRGenerator;
 pub use quotation_generator::QuotationGenerator;
+pub use receipt_generator::ReceiptGenerator;
 pub use report_generator::ReportGenerator;
 pub use template_manager::TemplateManager;
 pub use typst_generator::TypstGenerator;
@@ -147,6 +149,11 @@ impl GeneratorFactory {
         pdf_generators.insert(
             DocumentType::Report,
             Box::new(ReportGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>,
+        );
+
+        pdf_generators.insert(
+            DocumentType::Receipt,
+            Box::new(ReceiptGenerator::new(template_dir.clone())) as Box<dyn DocumentGenerator>,
         );
 
         // Create Excel and CSV generators

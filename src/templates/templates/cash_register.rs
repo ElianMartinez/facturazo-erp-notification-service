@@ -238,7 +238,7 @@ impl CashRegisterTemplate {
   paper: "a4",
   margin: (top: 12mm, bottom: 12mm, left: 15mm, right: 15mm),
 )
-#set text(font: "Inter", size: 10pt, fill: rgb("1E293B"))
+#set text(font: "Roboto", size: 10pt, fill: rgb("1E293B"))
 
 // ============================================
 // HEADER
@@ -326,7 +326,7 @@ impl CashRegisterTemplate {
     // INGRESOS
     #text(size: 10pt, weight: "bold")[INGRESOS]
     #h(8pt)
-    #line(length: 1fr, stroke: 1pt + rgb("E2E8F0"))
+    #line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
     #v(8pt)
 
     #table(
@@ -360,7 +360,7 @@ impl CashRegisterTemplate {
     // EGRESOS
     #text(size: 10pt, weight: "bold")[EGRESOS]
     #h(8pt)
-    #line(length: 1fr, stroke: 1pt + rgb("E2E8F0"))
+    #line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
     #v(8pt)
 
     #table(
@@ -455,7 +455,7 @@ impl CashRegisterTemplate {
 // ============================================
 #text(size: 10pt, weight: "bold")[CUADRE POR MÉTODO DE PAGO]
 #h(8pt)
-#line(length: 1fr, stroke: 1pt + rgb("E2E8F0"))
+#line(length: 100%, stroke: 1pt + rgb("E2E8F0"))
 #v(8pt)
 
 #table(
