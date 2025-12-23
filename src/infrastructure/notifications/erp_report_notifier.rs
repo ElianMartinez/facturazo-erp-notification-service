@@ -324,6 +324,13 @@ impl ErpReportNotifier {
         let format_label = self.get_format_label(&payload.output.format);
         let generated_at = &payload.report.generated_at;
 
+        // Company/Tenant name
+        let company_name = payload
+            .company_info
+            .as_ref()
+            .map(|c| c.display_name.as_ref().unwrap_or(&c.name).clone())
+            .unwrap_or_else(|| "".to_string());
+
         // Date range info
         let date_info = if let Some(ref range) = payload.report.date_range {
             format!("Período: {} al {}", range.from, range.to)
@@ -341,7 +348,7 @@ impl ErpReportNotifier {
         // Plain text version
         let plain_body = format!(
             r#"REPORTE: {}
-
+{}
 {}
 
 Detalles del reporte:
@@ -357,6 +364,11 @@ El archivo se encuentra adjunto a este correo.
 Este es un correo automático generado por Facturazo ERP.
 Por favor no responda a este mensaje."#,
             report_title,
+            if !company_name.is_empty() {
+                format!("Empresa: {}\n", company_name)
+            } else {
+                "".to_string()
+            },
             intro,
             report_code,
             format_label,
@@ -474,6 +486,7 @@ Por favor no responda a este mensaje."#,
     <div class="header">
         <h1>{}</h1>
         <div class="subtitle">{}</div>
+        {}
     </div>
     <div class="content">
         <p class="intro">{}</p>
@@ -506,6 +519,14 @@ Por favor no responda a este mensaje."#,
 </html>"#,
             report_title,
             report_code,
+            if !company_name.is_empty() {
+                format!(
+                    r#"<div class="subtitle" style="margin-top: 8px; font-weight: 600;">{}</div>"#,
+                    company_name
+                )
+            } else {
+                "".to_string()
+            },
             intro,
             format_label.to_lowercase(),
             format_label,
@@ -549,6 +570,13 @@ Por favor no responda a este mensaje."#,
         let format_label = self.get_format_label(&payload.output.format);
         let generated_at = &payload.report.generated_at;
 
+        // Company/Tenant name
+        let company_name = payload
+            .company_info
+            .as_ref()
+            .map(|c| c.display_name.as_ref().unwrap_or(&c.name).clone())
+            .unwrap_or_else(|| "".to_string());
+
         // Date range info
         let date_info = if let Some(ref range) = payload.report.date_range {
             format!("Período: {} al {}", range.from, range.to)
@@ -566,7 +594,7 @@ Por favor no responda a este mensaje."#,
         // Plain text version with download link
         let plain_body = format!(
             r#"REPORTE: {}
-
+{}
 {}
 
 Detalles del reporte:
@@ -585,6 +613,11 @@ DESCARGAR REPORTE:
 Este es un correo automático generado por Facturazo ERP.
 Por favor no responda a este mensaje."#,
             report_title,
+            if !company_name.is_empty() {
+                format!("Empresa: {}\n", company_name)
+            } else {
+                "".to_string()
+            },
             intro,
             report_code,
             format_label,
@@ -727,6 +760,7 @@ Por favor no responda a este mensaje."#,
     <div class="header">
         <h1>{}</h1>
         <div class="subtitle">{}</div>
+        {}
     </div>
     <div class="content">
         <p class="intro">{}</p>
@@ -764,6 +798,14 @@ Por favor no responda a este mensaje."#,
 </html>"#,
             report_title,
             report_code,
+            if !company_name.is_empty() {
+                format!(
+                    r#"<div class="subtitle" style="margin-top: 8px; font-weight: 600;">{}</div>"#,
+                    company_name
+                )
+            } else {
+                "".to_string()
+            },
             intro,
             format_label.to_lowercase(),
             format_label,
