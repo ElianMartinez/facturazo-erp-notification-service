@@ -5,7 +5,9 @@ use std::sync::Arc;
 use crate::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use crate::infrastructure::cache::CacheService;
 use crate::infrastructure::generators::GeneratorFactory;
-use crate::infrastructure::notifications::{EmailService, EvolutionApiClient};
+use crate::infrastructure::notifications::{
+    EmailService, EvolutionApiClient, GreenApiClient, WhatsAppProvider,
+};
 use crate::infrastructure::storage::StorageService;
 use crate::storage::s3::S3Client;
 use crate::templates::TemplateManager;
@@ -26,6 +28,14 @@ pub struct ApiState {
     pub storage_service: Arc<StorageService>,
 }
 
+/// WhatsApp provider selection
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum WhatsAppProviderType {
+    #[default]
+    Evolution,
+    GreenApi,
+}
+
 #[derive(Clone)]
 pub struct AppConfig {
     pub max_sync_size_bytes: usize,
@@ -43,10 +53,17 @@ pub struct AppConfig {
     pub smtp_pass: Option<String>,
     pub smtp_from_email: String,
     pub smtp_from_name: String,
+    // WhatsApp provider selection
+    pub whatsapp_provider: WhatsAppProviderType,
     // WhatsApp EvolutionAPI configuration
     pub evolution_api_url: Option<String>,
     pub evolution_api_key: Option<String>,
     pub evolution_instance: Option<String>,
+    // WhatsApp Green-API configuration
+    pub green_api_url: Option<String>,
+    pub green_api_media_url: Option<String>,
+    pub green_api_instance_id: Option<String>,
+    pub green_api_token: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -67,10 +84,17 @@ impl Default for AppConfig {
             smtp_pass: None,
             smtp_from_email: "noreply@example.com".to_string(),
             smtp_from_name: "PDF Service".to_string(),
-            // WhatsApp defaults
+            // WhatsApp provider defaults
+            whatsapp_provider: WhatsAppProviderType::default(),
+            // EvolutionAPI defaults
             evolution_api_url: None,
             evolution_api_key: None,
             evolution_instance: None,
+            // Green-API defaults
+            green_api_url: None,
+            green_api_media_url: None,
+            green_api_instance_id: None,
+            green_api_token: None,
         }
     }
 }
@@ -151,21 +175,64 @@ impl ApiState {
             None
         };
 
-        // Initialize WhatsApp service if configured
-        let whatsapp_service = if let (Some(url), Some(key), Some(instance)) = (
-            config.evolution_api_url.as_ref(),
-            config.evolution_api_key.as_ref(),
-            config.evolution_instance.as_ref(),
-        ) {
-            tracing::info!("WhatsApp service configured with instance: {}", instance);
-            Some(Arc::new(EvolutionApiClient::new(
-                url.clone(),
-                key.clone(),
-                instance.clone(),
-            )))
-        } else {
-            tracing::warn!("WhatsApp service not configured - EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE required");
-            None
+        // Initialize WhatsApp service based on configured provider
+        let whatsapp_service: Option<Arc<dyn WhatsAppProvider>> = match config.whatsapp_provider {
+            WhatsAppProviderType::Evolution => {
+                if let (Some(url), Some(key), Some(instance)) = (
+                    config.evolution_api_url.as_ref(),
+                    config.evolution_api_key.as_ref(),
+                    config.evolution_instance.as_ref(),
+                ) {
+                    tracing::info!(
+                        "WhatsApp service configured with EvolutionAPI, instance: {}",
+                        instance
+                    );
+                    Some(Arc::new(EvolutionApiClient::new(
+                        url.clone(),
+                        key.clone(),
+                        instance.clone(),
+                    )))
+                } else {
+                    tracing::warn!(
+                        "EvolutionAPI selected but not configured - EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE required"
+                    );
+                    None
+                }
+            }
+            WhatsAppProviderType::GreenApi => {
+                if let (Some(url), Some(instance_id), Some(token)) = (
+                    config.green_api_url.as_ref(),
+                    config.green_api_instance_id.as_ref(),
+                    config.green_api_token.as_ref(),
+                ) {
+                    // Use media URL if configured for direct file uploads
+                    let client = if let Some(media_url) = config.green_api_media_url.as_ref() {
+                        tracing::info!(
+                            "WhatsApp service configured with Green-API, instance: {}, media_url: {}",
+                            instance_id,
+                            media_url
+                        );
+                        GreenApiClient::with_media_url(
+                            url.clone(),
+                            media_url.clone(),
+                            instance_id.clone(),
+                            token.clone(),
+                        )
+                    } else {
+                        tracing::info!(
+                            "WhatsApp service configured with Green-API, instance: {}",
+                            instance_id
+                        );
+                        GreenApiClient::new(url.clone(), instance_id.clone(), token.clone())
+                    };
+                    Some(Arc::new(client))
+                } else {
+                    tracing::warn!(
+                        "Green-API selected but not configured - GREEN_API_URL, GREEN_API_INSTANCE_ID, GREEN_API_TOKEN required"
+                    );
+                    None
+                }
+            }
         };
 
         // Initialize document orchestrator

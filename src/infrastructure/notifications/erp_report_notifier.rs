@@ -12,8 +12,10 @@ use crate::templates::erp_report_models::{
     WhatsAppDelivery,
 };
 
+use std::sync::Arc;
+
 use super::email::{EmailAttachment, EmailService};
-use super::evolution_api::{EvolutionAPIClient, MediaType, SendMediaRequest, SendTextRequest};
+use super::WhatsAppProvider;
 
 /// Result of delivering a report
 #[derive(Debug, Clone)]
@@ -44,20 +46,23 @@ impl DeliveryResult {
 }
 
 /// ERP Report Notifier - handles delivery of generated reports
+///
+/// Uses the `WhatsAppProvider` trait for WhatsApp integration,
+/// allowing different providers (Evolution API, Green-API, etc.)
 pub struct ErpReportNotifier {
     email_service: Option<EmailService>,
-    whatsapp_client: Option<EvolutionAPIClient>,
+    whatsapp_provider: Option<Arc<dyn WhatsAppProvider>>,
 }
 
 impl ErpReportNotifier {
     /// Create a new notifier with optional email and WhatsApp services
     pub fn new(
         email_service: Option<EmailService>,
-        whatsapp_client: Option<EvolutionAPIClient>,
+        whatsapp_provider: Option<Arc<dyn WhatsAppProvider>>,
     ) -> Self {
         Self {
             email_service,
-            whatsapp_client,
+            whatsapp_provider,
         }
     }
 
@@ -65,15 +70,15 @@ impl ErpReportNotifier {
     pub fn email_only(email_service: EmailService) -> Self {
         Self {
             email_service: Some(email_service),
-            whatsapp_client: None,
+            whatsapp_provider: None,
         }
     }
 
     /// Create a notifier with only WhatsApp service
-    pub fn whatsapp_only(whatsapp_client: EvolutionAPIClient) -> Self {
+    pub fn whatsapp_only(whatsapp_provider: Arc<dyn WhatsAppProvider>) -> Self {
         Self {
             email_service: None,
-            whatsapp_client: Some(whatsapp_client),
+            whatsapp_provider: Some(whatsapp_provider),
         }
     }
 
@@ -213,8 +218,8 @@ impl ErpReportNotifier {
         document_bytes: Vec<u8>,
         download_url: Option<String>,
     ) -> Result<DeliveryResult> {
-        let whatsapp_client = self
-            .whatsapp_client
+        let whatsapp_provider = self
+            .whatsapp_provider
             .as_ref()
             .context("WhatsApp service not configured")?;
 
@@ -236,49 +241,38 @@ impl ErpReportNotifier {
         };
 
         // Get file info
-        let (filename, mimetype) = self.get_attachment_info(payload);
+        let (filename, _mimetype) = self.get_attachment_info(payload);
+
+        info!(
+            "Using WhatsApp provider: {}",
+            whatsapp_provider.provider_name()
+        );
 
         // Send to each number
         for number in &whatsapp_delivery.numbers {
             info!("Sending report via WhatsApp to: {}", number);
 
-            // First send text message
-            let text_request = SendTextRequest {
-                number: super::evolution_api::normalize_dominican_phone(number),
-                text: text_message.clone(),
-                delay: None,
-                link_preview: Some(download_url.is_some()), // Enable link preview if sending URL
-                mentioned: None,
-                mentions_every_one: None,
-                quoted: None,
-            };
-
-            match whatsapp_client.send_text(text_request).await {
+            // First send text message using the trait method
+            match whatsapp_provider
+                .send_simple_text(number, &text_message)
+                .await
+            {
                 Ok(text_id) => {
                     info!("WhatsApp text sent to {}: {}", number, text_id);
 
                     // Only send document if we don't have a download URL (file is small enough)
                     if download_url.is_none() {
-                        let base64_content = BASE64.encode(&document_bytes);
                         let caption = format!(
                             "{} - {}",
                             payload.report.title,
                             self.get_format_label(&payload.output.format)
                         );
 
-                        let media_request = SendMediaRequest {
-                            number: super::evolution_api::normalize_dominican_phone(number),
-                            mediatype: MediaType::Document,
-                            mimetype: mimetype.clone(),
-                            caption: caption.clone(),
-                            media: base64_content.clone(),
-                            file_name: filename.clone(),
-                            delay: Some(1000), // Small delay after text
-                            link_preview: Some(false),
-                            mentions_every_one: Some(false),
-                        };
-
-                        match whatsapp_client.send_media(media_request).await {
+                        // Use the trait method for sending PDF/documents
+                        match whatsapp_provider
+                            .send_pdf(number, document_bytes.clone(), filename.clone(), caption)
+                            .await
+                        {
                             Ok(doc_id) => {
                                 info!("WhatsApp document sent to {}: {}", number, doc_id);
                                 result.successful_recipients.push(number.clone());
@@ -953,14 +947,14 @@ _{}_
 /// Builder for creating ErpReportNotifier with services from configuration
 pub struct ErpReportNotifierBuilder {
     email_service: Option<EmailService>,
-    whatsapp_client: Option<EvolutionAPIClient>,
+    whatsapp_provider: Option<Arc<dyn WhatsAppProvider>>,
 }
 
 impl ErpReportNotifierBuilder {
     pub fn new() -> Self {
         Self {
             email_service: None,
-            whatsapp_client: None,
+            whatsapp_provider: None,
         }
     }
 
@@ -987,15 +981,15 @@ impl ErpReportNotifierBuilder {
         self
     }
 
-    /// Configure WhatsApp service
-    pub fn with_whatsapp(mut self, base_url: String, api_key: String, instance: String) -> Self {
-        self.whatsapp_client = Some(EvolutionAPIClient::new(base_url, api_key, instance));
+    /// Configure WhatsApp service with any provider that implements WhatsAppProvider
+    pub fn with_whatsapp_provider(mut self, provider: Arc<dyn WhatsAppProvider>) -> Self {
+        self.whatsapp_provider = Some(provider);
         self
     }
 
     /// Build the notifier
     pub fn build(self) -> ErpReportNotifier {
-        ErpReportNotifier::new(self.email_service, self.whatsapp_client)
+        ErpReportNotifier::new(self.email_service, self.whatsapp_provider)
     }
 }
 

@@ -22,7 +22,9 @@ use tracing::{error, info, warn, Instrument};
 use pdf_services::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use pdf_services::infrastructure::cache::CacheService;
 use pdf_services::infrastructure::generators::GeneratorFactory;
-use pdf_services::infrastructure::notifications::{EmailService, EvolutionApiClient};
+use pdf_services::infrastructure::notifications::{
+    EmailService, EvolutionApiClient, GreenApiClient, WhatsAppProvider,
+};
 use pdf_services::infrastructure::storage::StorageService;
 use pdf_services::kafka::erp_messages::ErpIntegrationEvent;
 use pdf_services::kafka::handlers::{KafkaHandler, KafkaMessage};
@@ -147,19 +149,56 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Initialize WhatsApp/EvolutionAPI service if configured
-    let whatsapp_service = match (
-        env::var("EVOLUTION_API_URL").ok(),
-        env::var("EVOLUTION_API_KEY").ok(),
-        env::var("EVOLUTION_INSTANCE").ok(),
-    ) {
-        (Some(url), Some(api_key), Some(instance)) => {
-            info!("WhatsApp service configured with EvolutionAPI at: {}", url);
-            Some(Arc::new(EvolutionApiClient::new(url, api_key, instance)))
-        }
-        _ => {
-            warn!("WhatsApp service not configured - EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE required");
-            None
+    // Initialize WhatsApp service - supports both Evolution API and Green-API
+    let whatsapp_service: Option<Arc<dyn WhatsAppProvider>> = {
+        let provider_type = env::var("WHATSAPP_PROVIDER")
+            .unwrap_or_else(|_| "evolution".to_string())
+            .to_lowercase();
+
+        match provider_type.as_str() {
+            "greenapi" | "green-api" | "green_api" => {
+                match (
+                    env::var("GREEN_API_URL").ok(),
+                    env::var("GREEN_API_INSTANCE_ID").ok(),
+                    env::var("GREEN_API_TOKEN").ok(),
+                ) {
+                    (Some(url), Some(instance_id), Some(token)) => {
+                        // Use media URL if available for direct file uploads
+                        let client = if let Ok(media_url) = env::var("GREEN_API_MEDIA_URL") {
+                            info!(
+                                "WhatsApp service configured with Green-API at: {} (media: {})",
+                                url, media_url
+                            );
+                            GreenApiClient::with_media_url(url, media_url, instance_id, token)
+                        } else {
+                            info!("WhatsApp service configured with Green-API at: {}", url);
+                            GreenApiClient::new(url, instance_id, token)
+                        };
+                        Some(Arc::new(client) as Arc<dyn WhatsAppProvider>)
+                    }
+                    _ => {
+                        warn!("Green-API selected but not configured - GREEN_API_URL, GREEN_API_INSTANCE_ID, GREEN_API_TOKEN required");
+                        None
+                    }
+                }
+            }
+            _ => {
+                match (
+                    env::var("EVOLUTION_API_URL").ok(),
+                    env::var("EVOLUTION_API_KEY").ok(),
+                    env::var("EVOLUTION_INSTANCE").ok(),
+                ) {
+                    (Some(url), Some(api_key), Some(instance)) => {
+                        info!("WhatsApp service configured with EvolutionAPI at: {}", url);
+                        Some(Arc::new(EvolutionApiClient::new(url, api_key, instance))
+                            as Arc<dyn WhatsAppProvider>)
+                    }
+                    _ => {
+                        warn!("WhatsApp service not configured - EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE required");
+                        None
+                    }
+                }
+            }
         }
     };
 

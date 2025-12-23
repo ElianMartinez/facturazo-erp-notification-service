@@ -7,8 +7,7 @@ use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook, Worksh
 use std::collections::HashMap;
 
 use crate::templates::{
-    ColumnAlign, ColumnDefinition, ColumnType, DataStructureType, ErpReportPayload,
-    ReportCompanyInfo, ReportGroup,
+    ColumnAlign, ColumnDefinition, ColumnType, DataStructureType, ErpReportPayload, ReportGroup,
 };
 
 /// Excel generator for ERP reports
@@ -194,6 +193,10 @@ impl ErpReportExcelGenerator {
         }
     }
 
+    /// Write header with three-column layout
+    /// Left: Company name + Address
+    /// Center: Report title + Subtitle
+    /// Right: Breadcrumb + Date + User
     fn write_header(
         worksheet: &mut Worksheet,
         payload: &ErpReportPayload,
@@ -201,62 +204,109 @@ impl ErpReportExcelGenerator {
         start_row: u32,
     ) -> Result<u32> {
         let mut row = start_row;
+        let col_count = payload
+            .metadata
+            .columns
+            .iter()
+            .filter(|c| !c.hidden)
+            .count();
 
-        // Company info (if available and show_logo is enabled)
-        if payload.output.show_logo {
-            if let Some(ref company) = payload.company_info {
-                row = Self::write_company_header(worksheet, company, formats, row)?;
+        // Calculate column positions for three sections
+        // Left: columns 0-1, Center: middle columns, Right: last 2 columns
+        let center_col = (col_count / 2) as u16;
+        let right_col = (col_count.saturating_sub(1)) as u16;
+
+        // === Row 1: Company name | Title | Breadcrumb ===
+        // Left: Company name
+        if let Some(ref company) = payload.company_info {
+            let company_name = company.display_name.as_ref().unwrap_or(&company.name);
+            worksheet.write_string_with_format(row, 0, company_name, &formats.title)?;
+        }
+
+        // Center: Report title
+        worksheet.write_string_with_format(
+            row,
+            center_col,
+            &payload.report.title,
+            &formats.title,
+        )?;
+
+        // Right: Breadcrumb
+        if let Some(ref breadcrumb) = payload.report.breadcrumb {
+            // Create right-aligned subtitle format
+            let right_format = Format::new()
+                .set_font_size(10)
+                .set_font_color(Color::RGB(0x666666))
+                .set_align(FormatAlign::Right);
+            worksheet.write_string_with_format(row, right_col, breadcrumb, &right_format)?;
+        }
+        row += 1;
+
+        // === Row 2: Address | Subtitle | Date ===
+        // Left: Address
+        if let Some(ref company) = payload.company_info {
+            if let Some(ref address) = company.address {
+                worksheet.write_string_with_format(row, 0, address, &formats.subtitle)?;
             }
         }
 
-        // Title
-        worksheet.write_string_with_format(row, 0, &payload.report.title, &formats.title)?;
+        // Center: Subtitle (e.g., "Ventas")
+        if let Some(ref subtitle) = payload.report.subtitle {
+            worksheet.write_string_with_format(row, center_col, subtitle, &formats.subtitle)?;
+        }
+
+        // Right: Date
+        let date_text = if payload.report.generated_at.len() >= 10 {
+            format!(
+                "Fecha: {}",
+                Self::format_datetime(&payload.report.generated_at)
+            )
+        } else {
+            format!("Fecha: {}", &payload.report.generated_at)
+        };
+        let right_format = Format::new()
+            .set_font_size(10)
+            .set_font_color(Color::RGB(0x666666))
+            .set_align(FormatAlign::Right);
+        worksheet.write_string_with_format(row, right_col, &date_text, &right_format)?;
         row += 1;
 
-        // Breadcrumb
-        if let Some(ref breadcrumb) = payload.report.breadcrumb {
-            worksheet.write_string_with_format(row, 0, breadcrumb, &formats.subtitle)?;
+        // === Row 3: (empty) | (empty) | User ===
+        if let Some(ref user_name) = payload.report.user_name {
+            let user_text = format!("Usuario: {}", user_name);
+            let right_format = Format::new()
+                .set_font_size(10)
+                .set_font_color(Color::RGB(0x666666))
+                .set_align(FormatAlign::Right);
+            worksheet.write_string_with_format(row, right_col, &user_text, &right_format)?;
             row += 1;
         }
 
-        // Generated date
-        let generated_text = format!("Generado: {}", &payload.report.generated_at[..10]);
-        worksheet.write_string_with_format(row, 0, &generated_text, &formats.subtitle)?;
+        // Add blank row before data
         row += 1;
 
         Ok(row)
     }
 
-    fn write_company_header(
-        worksheet: &mut Worksheet,
-        company: &ReportCompanyInfo,
-        formats: &ExcelFormats,
-        start_row: u32,
-    ) -> Result<u32> {
-        let mut row = start_row;
-
-        // Company name (use display_name if available)
-        let company_name = company.display_name.as_ref().unwrap_or(&company.name);
-        worksheet.write_string_with_format(row, 0, company_name, &formats.title)?;
-        row += 1;
-
-        // RNC / Tax ID
-        if let Some(ref tax_id) = company.tax_id {
-            let rnc_text = format!("RNC: {}", tax_id);
-            worksheet.write_string_with_format(row, 0, &rnc_text, &formats.subtitle)?;
-            row += 1;
+    /// Format datetime from ISO string to dd/MM/yyyy HH:mm format
+    fn format_datetime(iso_datetime: &str) -> String {
+        // Parse ISO date and format as dd/MM/yyyy HH:mm
+        if let Some(date_part) = iso_datetime.split('T').next() {
+            let parts: Vec<&str> = date_part.split('-').collect();
+            if parts.len() >= 3 {
+                let date = format!("{}/{}/{}", parts[2], parts[1], parts[0]);
+                // Extract time if available
+                if let Some(time_part) = iso_datetime.split('T').nth(1) {
+                    let time = time_part.split('.').next().unwrap_or(time_part);
+                    let time = time.trim_end_matches('Z');
+                    if time.len() >= 5 {
+                        return format!("{} {}", date, &time[..5]);
+                    }
+                }
+                return date;
+            }
         }
-
-        // Address
-        if let Some(ref address) = company.address {
-            worksheet.write_string_with_format(row, 0, address, &formats.subtitle)?;
-            row += 1;
-        }
-
-        // Add blank row after company info
-        row += 1;
-
-        Ok(row)
+        iso_datetime.to_string()
     }
 
     fn write_filters(
@@ -790,8 +840,10 @@ mod tests {
                 code: "TEST_REPORT".to_string(),
                 variant: None,
                 title: "Test Report".to_string(),
+                subtitle: None,
                 breadcrumb: Some("Test / Reports".to_string()),
                 generated_at: "2025-12-15T10:00:00Z".to_string(),
+                user_name: None,
                 date_range: None,
                 as_of_date: None,
             },

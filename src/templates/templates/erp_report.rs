@@ -717,141 +717,145 @@ impl ErpReportTemplate {
         .to_string()
     }
 
-    /// Generate header section with company info
+    /// Generate header section with three-column layout
+    /// Left: Company name + Address
+    /// Center: Report title + Subtitle
+    /// Right: Breadcrumb + Date + User
     fn generate_header_section(
         &self,
         report: &ReportInfo,
         company_info: &Option<ReportCompanyInfo>,
-        show_logo: bool,
+        _show_logo: bool,
     ) -> String {
-        let mut header = String::new();
-
-        // Company info section (if available)
-        if let Some(ref company) = company_info {
+        // Left column: Company info
+        let left_content = if let Some(ref company) = company_info {
             let company_name = company.display_name.as_ref().unwrap_or(&company.name);
-
-            // Check if logo_url is a local file (not a URL)
-            // Typst's #image() only supports local files, not URLs
-            let has_local_logo = company
-                .logo_url
+            let address = company
+                .address
                 .as_ref()
-                .map(|url| !url.starts_with("http://") && !url.starts_with("https://"))
-                .unwrap_or(false);
+                .map(|a| {
+                    format!(
+                        " \\ #text(size: 9pt, fill: rgb(100, 100, 100))[{}]",
+                        utils::escape_typst(a)
+                    )
+                })
+                .unwrap_or_default();
 
-            // Logo and company name layout
-            if show_logo && has_local_logo {
-                // With local logo: grid layout (logo left, info right)
-                header.push_str(&format!(
-                    r#"#grid(columns: (auto, 1fr), gutter: 15pt,
-  [#image("{}", width: 80pt, height: auto)],
-  [
-    #align(right)[
-      #text(size: 12pt, weight: "bold")[{}]
-      {}
-      {}
-    ]
-  ]
-)
-#v(8pt)"#,
-                    company.logo_url.as_ref().unwrap(),
-                    utils::escape_typst(company_name),
-                    company
-                        .tax_id
-                        .as_ref()
-                        .map(|t| format!(
-                            "\n      #text(size: 9pt, fill: gray)[RNC: {}]",
-                            utils::escape_typst(t)
-                        ))
-                        .unwrap_or_default(),
-                    company
-                        .address
-                        .as_ref()
-                        .map(|a| format!(
-                            "\n      #text(size: 8pt, fill: gray)[{}]",
-                            utils::escape_typst(a)
-                        ))
-                        .unwrap_or_default()
-                ));
-            } else {
-                // Without logo (or URL logo): centered company name with info
-                header.push_str(&format!(
-                    r#"#align(center)[
-  #text(size: 14pt, weight: "bold")[{}]
-  {}
-  {}
-]
-#v(6pt)"#,
-                    utils::escape_typst(company_name),
-                    company
-                        .tax_id
-                        .as_ref()
-                        .map(|t| format!(
-                            "\n  #text(size: 10pt, fill: gray)[RNC: {}]",
-                            utils::escape_typst(t)
-                        ))
-                        .unwrap_or_default(),
-                    company
-                        .address
-                        .as_ref()
-                        .map(|a| format!(
-                            "\n  #text(size: 9pt, fill: gray)[{}]",
-                            utils::escape_typst(a)
-                        ))
-                        .unwrap_or_default()
-                ));
-            }
-        }
+            format!(
+                r#"#text(size: 11pt, weight: "bold")[{}]{}"#,
+                utils::escape_typst(company_name),
+                address
+            )
+        } else {
+            String::new()
+        };
 
-        // Report title and breadcrumb
-        header.push_str(&format!(
-            r#"#align(center)[
-  #text(size: 14pt, weight: "bold")[{}]
-  {}
-]
-#v(8pt)
-#line(length: 100%, stroke: 1pt + rgb(24, 144, 255))
-#v(8pt)"#,
+        // Center column: Title + Subtitle
+        let subtitle_content = report
+            .subtitle
+            .as_ref()
+            .map(|s| {
+                format!(
+                    " \\ #text(size: 10pt, fill: rgb(100, 100, 100))[{}]",
+                    utils::escape_typst(s)
+                )
+            })
+            .unwrap_or_default();
+
+        let center_content = format!(
+            r#"#text(size: 12pt, weight: "bold")[{}]{}"#,
             utils::escape_typst(&report.title),
-            report
-                .breadcrumb
-                .as_ref()
-                .map(|b| format!(
-                    "\n  #v(2pt)\n  #text(size: 9pt, fill: gray)[{}]",
-                    utils::escape_typst(b)
-                ))
-                .unwrap_or_default()
-        ));
+            subtitle_content
+        );
 
-        header
+        // Right column: Breadcrumb + Period/Date + User
+        let breadcrumb_content = report
+            .breadcrumb
+            .as_ref()
+            .map(|b| {
+                format!(
+                    "#text(size: 8pt, fill: rgb(100, 100, 100))[{}] \\ ",
+                    utils::escape_typst(b)
+                )
+            })
+            .unwrap_or_default();
+
+        // Build date content: period/as_of + generation datetime
+        let formatted_datetime = self.format_datetime_with_ampm(&report.generated_at);
+
+        let date_content = if let Some(ref date_range) = report.date_range {
+            format!(
+                "#text(size: 9pt)[Periodo: {} al {}] \\ #text(size: 8pt, fill: rgb(100, 100, 100))[Generado: {}]",
+                self.format_date(&date_range.from),
+                self.format_date(&date_range.to),
+                formatted_datetime
+            )
+        } else if let Some(ref as_of) = report.as_of_date {
+            format!(
+                "#text(size: 9pt)[Al: {}] \\ #text(size: 8pt, fill: rgb(100, 100, 100))[Generado: {}]",
+                self.format_date(as_of),
+                formatted_datetime
+            )
+        } else {
+            format!("#text(size: 9pt)[Fecha: {}]", formatted_datetime)
+        };
+
+        let user_content = report
+            .user_name
+            .as_ref()
+            .map(|u| format!(" \\ #text(size: 9pt)[Usuario: {}]", utils::escape_typst(u)))
+            .unwrap_or_default();
+
+        let right_content = format!("{}{}{}", breadcrumb_content, date_content, user_content);
+
+        // Three-column grid layout with content blocks
+        format!(
+            r#"#grid(columns: (1fr, 1fr, 1fr), gutter: 10pt,
+  align(left)[{}],
+  align(center)[{}],
+  align(right)[{}]
+)
+#v(6pt)
+#line(length: 100%, stroke: 0.5pt + rgb(200, 200, 200))
+#v(6pt)"#,
+            left_content, center_content, right_content
+        )
+    }
+
+    /// Format datetime with AM/PM format (e.g., "23/12/2025 02:16 PM")
+    fn format_datetime_with_ampm(&self, iso_datetime: &str) -> String {
+        let date = self.format_date(iso_datetime);
+        if let Some(time_part) = iso_datetime.split('T').nth(1) {
+            let time = time_part.split('.').next().unwrap_or(time_part);
+            let time = time.trim_end_matches('Z');
+            // Parse hour and determine AM/PM
+            let parts: Vec<&str> = time.split(':').collect();
+            if parts.len() >= 2 {
+                if let Ok(hour) = parts[0].parse::<u32>() {
+                    let minutes = parts[1];
+                    let (hour_12, period) = if hour == 0 {
+                        (12, "AM")
+                    } else if hour < 12 {
+                        (hour, "AM")
+                    } else if hour == 12 {
+                        (12, "PM")
+                    } else {
+                        (hour - 12, "PM")
+                    };
+                    return format!("{} {:02}:{} {}", date, hour_12, minutes, period);
+                }
+            }
+            return format!("{} {}", date, &time[..5.min(time.len())]);
+        }
+        date
     }
 
     /// Generate filters display
-    fn generate_filters_display(&self, report: &ReportInfo) -> String {
-        let mut filters = Vec::new();
-
-        if let Some(ref date_range) = report.date_range {
-            filters.push(format!(
-                "Periodo: {} al {}",
-                self.format_date(&date_range.from),
-                self.format_date(&date_range.to)
-            ));
-        }
-
-        if let Some(ref as_of) = report.as_of_date {
-            filters.push(format!("Al: {}", self.format_date(as_of)));
-        }
-
-        if filters.is_empty() {
-            return String::new();
-        }
-
-        format!(
-            r#"#rect(width: 100%, fill: rgb(250, 250, 250), stroke: 0.5pt + rgb(200, 200, 200), radius: 2pt, inset: 6pt)[
-  #text(size: 8pt, fill: gray)[{}]
-]
-#v(8pt)"#,
-            filters.join(" | ")
-        )
+    /// Note: date_range and as_of_date are now shown in the header section
+    fn generate_filters_display(&self, _report: &ReportInfo) -> String {
+        // Date filters are now displayed in the header, so this returns empty
+        // Future: Can be used for other filters if needed
+        String::new()
     }
 }
 

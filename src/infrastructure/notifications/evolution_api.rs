@@ -381,6 +381,85 @@ pub fn is_valid_dominican_phone(phone: &str) -> bool {
         || normalized.starts_with("1849")
 }
 
+// Implement WhatsAppProvider trait for EvolutionAPIClient
+use super::WhatsAppProvider;
+use async_trait::async_trait;
+
+#[async_trait]
+impl WhatsAppProvider for EvolutionAPIClient {
+    async fn send_simple_text(&self, recipient: &str, message: &str) -> Result<String> {
+        let request = SendTextRequest {
+            number: normalize_dominican_phone(recipient),
+            text: message.to_string(),
+            delay: None,
+            link_preview: Some(false),
+            mentioned: None,
+            mentions_every_one: None,
+            quoted: None,
+        };
+        self.send_text(request).await
+    }
+
+    async fn send_document(
+        &self,
+        recipient: &str,
+        base64_content: &str,
+        filename: &str,
+        mimetype: &str,
+    ) -> Result<String> {
+        let request = SendMediaRequest {
+            number: normalize_dominican_phone(recipient),
+            mediatype: MediaType::Document,
+            mimetype: mimetype.to_string(),
+            caption: filename.to_string(),
+            media: base64_content.to_string(),
+            file_name: filename.to_string(),
+            delay: None,
+            link_preview: Some(false),
+            mentions_every_one: Some(false),
+        };
+        self.send_media(request).await
+    }
+
+    async fn send_pdf(
+        &self,
+        recipient: &str,
+        pdf_bytes: Vec<u8>,
+        filename: String,
+        caption: String,
+    ) -> Result<String> {
+        EvolutionAPIClient::send_pdf(self, recipient.to_string(), pdf_bytes, filename, caption)
+            .await
+    }
+
+    async fn send_invoice_notification(
+        &self,
+        phone: String,
+        invoice_number: String,
+        ncf: String,
+        amount: String,
+        pdf_bytes: Vec<u8>,
+    ) -> Result<String> {
+        EvolutionAPIClient::send_invoice_notification(
+            self,
+            phone,
+            invoice_number,
+            ncf,
+            amount,
+            pdf_bytes,
+        )
+        .await
+    }
+
+    async fn is_connected(&self) -> Result<bool> {
+        EvolutionAPIClient::is_connected(self).await
+    }
+
+    fn provider_name(&self) -> &'static str {
+        "EvolutionAPI"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

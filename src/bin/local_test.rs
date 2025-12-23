@@ -825,8 +825,10 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
             code: "NCF_SUMMARY".to_string(),
             variant: Some("DETAILED".to_string()),
             title: "Facturas Emitidas por NCF - Detallado".to_string(),
-            breadcrumb: Some("Ventas / Reportes / Facturas por NCF".to_string()),
+            subtitle: Some("Ventas".to_string()),
+            breadcrumb: Some("Ventas / Reportes / Facturas por NCF / Detallado".to_string()),
             generated_at: chrono::Utc::now().to_rfc3339(),
+            user_name: Some("Administrador Del Sistema".to_string()),
             date_range: Some(DateRange {
                 from: "2025-12-01".to_string(),
                 to: "2025-12-15".to_string(),
@@ -1041,8 +1043,10 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
             code: "AR_BALANCE_ANALYSIS".to_string(),
             variant: Some("DETAILED".to_string()),
             title: "Analisis de Saldos por Cobrar".to_string(),
+            subtitle: Some("Cuentas por Cobrar".to_string()),
             breadcrumb: Some("Cuentas por Cobrar / Reportes / Analisis de Saldos".to_string()),
             generated_at: chrono::Utc::now().to_rfc3339(),
+            user_name: Some("Administrador Del Sistema".to_string()),
             date_range: None,
             as_of_date: Some("2025-12-15".to_string()),
         },
@@ -1256,8 +1260,10 @@ fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpR
             code: variant.to_uppercase(),
             variant: None,
             title: format!("Reporte: {}", variant),
+            subtitle: None,
             breadcrumb: Some(format!("Reportes / {}", variant)),
             generated_at: chrono::Utc::now().to_rfc3339(),
+            user_name: Some("Test User".to_string()),
             date_range: Some(DateRange {
                 from: "2025-12-01".to_string(),
                 to: "2025-12-15".to_string(),
@@ -1578,9 +1584,6 @@ async fn send_report_via_email(
     subject: Option<String>,
 ) -> Result<()> {
     use pdf_services::infrastructure::notifications::ErpReportNotifierBuilder;
-    use pdf_services::templates::erp_report_models::{
-        DeliveryMethod, DeliveryOptions, EmailDelivery,
-    };
 
     println!("\n📧 Send ERP Report via Email\n{}", "=".repeat(50));
     println!("   Variant: {}", variant);
@@ -1681,10 +1684,10 @@ async fn send_report_via_whatsapp(
     phone: &str,
 ) -> Result<()> {
     use pdf_services::infrastructure::notifications::evolution_api::is_valid_dominican_phone;
-    use pdf_services::infrastructure::notifications::ErpReportNotifierBuilder;
-    use pdf_services::templates::erp_report_models::{
-        DeliveryMethod, DeliveryOptions, WhatsAppDelivery,
+    use pdf_services::infrastructure::notifications::{
+        ErpReportNotifierBuilder, EvolutionApiClient, WhatsAppProvider,
     };
+    use std::sync::Arc;
 
     println!("\n📱 Send ERP Report via WhatsApp\n{}", "=".repeat(50));
     println!("   Variant: {}", variant);
@@ -1707,6 +1710,10 @@ async fn send_report_via_whatsapp(
 
     println!("\n   WhatsApp API: {}", api_url);
     println!("   Instance: {}", instance);
+
+    // Create WhatsApp provider (using Evolution API for local testing)
+    let whatsapp_provider: Arc<dyn WhatsAppProvider> =
+        Arc::new(EvolutionApiClient::new(api_url, api_key, instance));
 
     // Build payload with delivery options
     let mut payload = match variant {
@@ -1744,7 +1751,7 @@ async fn send_report_via_whatsapp(
     // Create notifier and send
     println!("\n   Sending via WhatsApp...");
     let notifier = ErpReportNotifierBuilder::new()
-        .with_whatsapp(api_url, api_key, instance)
+        .with_whatsapp_provider(whatsapp_provider)
         .build();
 
     match notifier.deliver_report(&payload, doc_bytes, None).await {

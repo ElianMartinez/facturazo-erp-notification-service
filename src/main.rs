@@ -6,7 +6,7 @@
 
 use actix_web::{middleware, web, App, HttpServer};
 use anyhow::Result;
-use pdf_services::api::state::AppConfig;
+use pdf_services::api::state::{AppConfig, WhatsAppProviderType};
 use pdf_services::api::{configure_routes, ApiState};
 use pdf_services::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use pdf_services::infrastructure::cache::CacheService;
@@ -458,10 +458,24 @@ fn load_config() -> Result<AppConfig> {
         smtp_from_email: env::var("SMTP_FROM_EMAIL")
             .unwrap_or_else(|_| "noreply@example.com".to_string()),
         smtp_from_name: env::var("SMTP_FROM_NAME").unwrap_or_else(|_| "PDF Service".to_string()),
+        // WhatsApp provider selection
+        whatsapp_provider: match env::var("WHATSAPP_PROVIDER")
+            .unwrap_or_else(|_| "evolution".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "greenapi" | "green-api" | "green_api" => WhatsAppProviderType::GreenApi,
+            _ => WhatsAppProviderType::Evolution,
+        },
         // WhatsApp EvolutionAPI configuration
         evolution_api_url: env::var("EVOLUTION_API_URL").ok(),
         evolution_api_key: env::var("EVOLUTION_API_KEY").ok(),
         evolution_instance: env::var("EVOLUTION_INSTANCE").ok(),
+        // WhatsApp Green-API configuration
+        green_api_url: env::var("GREEN_API_URL").ok(),
+        green_api_media_url: env::var("GREEN_API_MEDIA_URL").ok(),
+        green_api_instance_id: env::var("GREEN_API_INSTANCE_ID").ok(),
+        green_api_token: env::var("GREEN_API_TOKEN").ok(),
     };
 
     Ok(config)

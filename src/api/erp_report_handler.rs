@@ -3,6 +3,8 @@
 //! Handles HTTP endpoints for ERP report generation (PDF, Excel, CSV)
 
 use actix_web::{web, HttpRequest, HttpResponse};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -15,6 +17,89 @@ use super::state::ApiState;
 use crate::templates::erp_report_models::{ErpReportPayload, OutputFormat};
 use crate::templates::templates::ErpReportTemplate;
 use crate::templates::TypstTemplate;
+
+// ============================================
+// Job Status Tracking
+// ============================================
+
+/// Status of an async report job
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JobStatus {
+    pub report_id: String,
+    pub status: JobState,
+    pub download_url: Option<String>,
+    pub file_size: Option<u64>,
+    pub processing_time_ms: Option<u64>,
+    pub error: Option<String>,
+    pub details: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub format: Option<String>,
+    pub mime_type: Option<String>,
+}
+
+/// Job state enum
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum JobState {
+    Processing,
+    Completed,
+    Failed,
+}
+
+impl JobStatus {
+    /// Create a new job in processing state
+    pub fn new_processing(report_id: String) -> Self {
+        Self {
+            report_id,
+            status: JobState::Processing,
+            download_url: None,
+            file_size: None,
+            processing_time_ms: None,
+            error: None,
+            details: None,
+            created_at: Utc::now(),
+            completed_at: None,
+            format: None,
+            mime_type: None,
+        }
+    }
+
+    /// Mark job as completed
+    pub fn complete(
+        mut self,
+        download_url: Option<String>,
+        file_size: u64,
+        processing_time_ms: u64,
+        format: String,
+        mime_type: String,
+    ) -> Self {
+        self.status = JobState::Completed;
+        self.download_url = download_url;
+        self.file_size = Some(file_size);
+        self.processing_time_ms = Some(processing_time_ms);
+        self.completed_at = Some(Utc::now());
+        self.format = Some(format);
+        self.mime_type = Some(mime_type);
+        self
+    }
+
+    /// Mark job as failed
+    pub fn fail(mut self, error: String, details: Option<String>) -> Self {
+        self.status = JobState::Failed;
+        self.error = Some(error);
+        self.details = details;
+        self.completed_at = Some(Utc::now());
+        self
+    }
+}
+
+/// Cache key prefix for job status
+const JOB_STATUS_CACHE_PREFIX: &str = "job_status:";
+
+/// TTL for job status in cache (24 hours)
+const JOB_STATUS_TTL_SECS: u64 = 86400;
 
 /// Maximum file size to attach directly to email (10 MB)
 /// Files larger than this will be uploaded to S3 and a download link sent instead
@@ -372,6 +457,20 @@ pub async fn generate_erp_report_async(
         "Queueing ERP report for async processing"
     );
 
+    // Save initial job status to cache
+    let job_status = JobStatus::new_processing(report_id.clone());
+    let cache_key = format!("{}{}", JOB_STATUS_CACHE_PREFIX, report_id);
+    state
+        .cache_service
+        .set(&cache_key, &job_status, JOB_STATUS_TTL_SECS)
+        .await;
+
+    tracing::debug!(
+        report_id = %report_id,
+        cache_key = %cache_key,
+        "Saved initial job status to cache"
+    );
+
     // Clone for async task
     let state_clone = state.clone();
     let report_id_clone = report_id.clone();
@@ -379,14 +478,34 @@ pub async fn generate_erp_report_async(
 
     // Spawn background task
     tokio::spawn(async move {
-        match process_report_async(state_clone, payload, report_id_clone.clone()).await {
-            Ok(url) => {
+        match process_report_async(state_clone.clone(), payload, report_id_clone.clone()).await {
+            Ok((download_url, file_size, processing_time_ms, format, mime_type)) => {
                 tracing::info!(
                     correlation_id = %correlation_id_clone,
                     report_id = %report_id_clone,
-                    result_url = %url,
+                    download_url = ?download_url,
+                    file_size = file_size,
                     "Async report completed"
                 );
+
+                // Update job status to completed
+                let cache_key = format!("{}{}", JOB_STATUS_CACHE_PREFIX, report_id_clone);
+                if let Some(job_status) =
+                    state_clone.cache_service.get::<JobStatus>(&cache_key).await
+                {
+                    let updated_status = job_status.complete(
+                        download_url,
+                        file_size,
+                        processing_time_ms,
+                        format,
+                        mime_type,
+                    );
+                    state_clone
+                        .cache_service
+                        .set(&cache_key, &updated_status, JOB_STATUS_TTL_SECS)
+                        .await;
+                    tracing::debug!(report_id = %report_id_clone, "Updated job status to completed");
+                }
             }
             Err(e) => {
                 tracing::error!(
@@ -394,6 +513,20 @@ pub async fn generate_erp_report_async(
                     report_id = %report_id_clone,
                     "Async report failed: {}", e
                 );
+
+                // Update job status to failed
+                let cache_key = format!("{}{}", JOB_STATUS_CACHE_PREFIX, report_id_clone);
+                if let Some(job_status) =
+                    state_clone.cache_service.get::<JobStatus>(&cache_key).await
+                {
+                    let updated_status = job_status
+                        .fail("Failed to generate report".to_string(), Some(e.to_string()));
+                    state_clone
+                        .cache_service
+                        .set(&cache_key, &updated_status, JOB_STATUS_TTL_SECS)
+                        .await;
+                    tracing::debug!(report_id = %report_id_clone, "Updated job status to failed");
+                }
             }
         }
     });
@@ -412,16 +545,62 @@ pub async fn generate_erp_report_async(
 pub async fn get_report_status(
     _req: HttpRequest,
     path: web::Path<String>,
-    _state: web::Data<ApiState>,
+    state: web::Data<ApiState>,
 ) -> ApiResult<HttpResponse> {
     let report_id = path.into_inner();
+    let cache_key = format!("{}{}", JOB_STATUS_CACHE_PREFIX, report_id);
 
-    // In production, this would check a cache/database for status
-    Ok(HttpResponse::Ok().json(json!({
-        "reportId": report_id,
-        "status": "unknown",
-        "message": "Status tracking requires cache/database implementation"
-    })))
+    tracing::debug!(
+        report_id = %report_id,
+        cache_key = %cache_key,
+        "Getting report status from cache"
+    );
+
+    // Get job status from cache
+    match state.cache_service.get::<JobStatus>(&cache_key).await {
+        Some(job_status) => {
+            tracing::info!(
+                report_id = %report_id,
+                status = ?job_status.status,
+                "Found job status in cache"
+            );
+
+            // Map status to response format expected by Core-Service
+            let status_str = match job_status.status {
+                JobState::Processing => "processing",
+                JobState::Completed => "completed",
+                JobState::Failed => "failed",
+            };
+
+            Ok(HttpResponse::Ok().json(json!({
+                "success": job_status.status == JobState::Completed,
+                "reportId": job_status.report_id,
+                "status": status_str,
+                "downloadUrl": job_status.download_url,
+                "fileSize": job_status.file_size.unwrap_or(0),
+                "processingTimeMs": job_status.processing_time_ms.unwrap_or(0),
+                "format": job_status.format,
+                "mimeType": job_status.mime_type,
+                "error": job_status.error,
+                "details": job_status.details,
+                "createdAt": job_status.created_at.to_rfc3339(),
+                "completedAt": job_status.completed_at.map(|dt| dt.to_rfc3339())
+            })))
+        }
+        None => {
+            tracing::warn!(
+                report_id = %report_id,
+                "Job status not found in cache"
+            );
+
+            Ok(HttpResponse::NotFound().json(json!({
+                "success": false,
+                "reportId": report_id,
+                "status": "not_found",
+                "error": "Report job not found or expired"
+            })))
+        }
+    }
 }
 
 /// Download report
@@ -432,10 +611,81 @@ pub async fn download_report(
     state: web::Data<ApiState>,
 ) -> ApiResult<HttpResponse> {
     let report_id = path.into_inner();
+    let temp_dir = PathBuf::from("./temp/reports");
 
-    // Try to find the report in S3 with various extensions
+    // Get job status to determine mime type and format
+    let job_cache_key = format!("{}{}", JOB_STATUS_CACHE_PREFIX, report_id);
+    let (mime_type, extension) =
+        if let Some(job_status) = state.cache_service.get::<JobStatus>(&job_cache_key).await {
+            let mime = job_status
+                .mime_type
+                .unwrap_or_else(|| "application/octet-stream".to_string());
+            let ext = job_status.format.unwrap_or_else(|| "bin".to_string());
+
+            // If it's an S3 presigned URL, redirect to it
+            if let Some(download_url) = &job_status.download_url {
+                if download_url.starts_with("http") {
+                    tracing::info!(
+                        report_id = %report_id,
+                        "Redirecting to S3 download URL"
+                    );
+                    return Ok(HttpResponse::Found()
+                        .append_header(("Location", download_url.clone()))
+                        .finish());
+                }
+            }
+
+            (mime, ext)
+        } else {
+            // Default to PDF if no job status found
+            ("application/pdf".to_string(), "pdf".to_string())
+        };
+
+    // Check for local file (files <= 10MB)
+    let file_path = temp_dir.join(format!("{}.{}", report_id, extension));
+    if file_path.exists() {
+        tracing::info!(
+            report_id = %report_id,
+            file_path = %file_path.display(),
+            "Serving report from local file"
+        );
+
+        // Read file bytes
+        match std::fs::read(&file_path) {
+            Ok(bytes) => {
+                let size = bytes.len();
+
+                // Delete the file after reading (consume once)
+                if let Err(e) = std::fs::remove_file(&file_path) {
+                    tracing::warn!(
+                        report_id = %report_id,
+                        "Failed to delete temp file after serving: {:?}", e
+                    );
+                } else {
+                    tracing::debug!(report_id = %report_id, "Deleted temp file after serving");
+                }
+
+                // Return bytes directly with appropriate headers
+                return Ok(HttpResponse::Ok()
+                    .content_type(mime_type)
+                    .append_header((
+                        "Content-Disposition",
+                        format!(
+                            "attachment; filename=\"report-{}.{}\"",
+                            report_id, extension
+                        ),
+                    ))
+                    .append_header(("Content-Length", size.to_string()))
+                    .body(bytes));
+            }
+            Err(e) => {
+                tracing::error!(report_id = %report_id, "Failed to read temp file: {:?}", e);
+            }
+        }
+    }
+
+    // Fallback: Try to find the report in S3 with various extensions
     for ext in ["pdf", "xlsx", "csv"] {
-        // Try finding by date pattern (current month)
         let now = chrono::Utc::now();
         let key = format!("reports/1/{}/{}.{}", now.format("%Y/%m/%d"), report_id, ext);
 
@@ -510,11 +760,12 @@ async fn generate_csv(
 }
 
 /// Process report asynchronously
+/// Returns: (download_url, file_size, processing_time_ms, format, mime_type)
 async fn process_report_async(
     state: web::Data<ApiState>,
     payload: ErpReportPayload,
     report_id: String,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<(Option<String>, u64, u64, String, String)> {
     let start = Instant::now();
 
     // Use correlation_id from payload or fallback to report_id
@@ -556,16 +807,17 @@ async fn process_report_async(
         "Step 1 complete: Generated report"
     );
 
-    // Determine if file is too large to attach directly to email
+    // Upload to S3 only if file is too large (> 10MB)
+    // For smaller files, we store bytes in cache for direct download
     let needs_s3_upload = file_size > MAX_ATTACHMENT_SIZE_BYTES;
 
-    // Only upload to S3 if file is too large to attach
+    // Upload to S3 if needed (file > 10MB)
     let download_url = if needs_s3_upload {
         tracing::info!(
             correlation_id = %correlation_id,
             file_size = file_size,
             threshold = MAX_ATTACHMENT_SIZE_BYTES,
-            "File exceeds threshold, uploading to S3"
+            "File exceeds 10MB, uploading to S3"
         );
 
         // Get environment prefix for S3 path
@@ -626,13 +878,26 @@ async fn process_report_async(
 
         Some(url)
     } else {
+        // Store bytes in local file system for direct download (file <= 10MB)
+        let temp_dir = PathBuf::from("./temp/reports");
+        std::fs::create_dir_all(&temp_dir).ok();
+
+        let file_path = temp_dir.join(format!("{}.{}", report_id, extension));
         tracing::info!(
             correlation_id = %correlation_id,
             file_size = file_size,
-            threshold = MAX_ATTACHMENT_SIZE_BYTES,
-            "File within threshold, will attach directly to email (no S3 upload)"
+            file_path = %file_path.display(),
+            "File <= 10MB, storing bytes in local file for direct download"
         );
-        None
+
+        // Write bytes to file
+        if let Err(e) = std::fs::write(&file_path, &bytes) {
+            tracing::error!(correlation_id = %correlation_id, "Failed to write temp file: {:?}", e);
+            return Err(anyhow::anyhow!("Failed to store report file"));
+        }
+
+        // Return internal download URL (will be handled by download_report endpoint)
+        Some(format!("/api/v1/reports/{}/download", report_id))
     };
 
     let processing_time = start.elapsed().as_millis();
@@ -655,8 +920,14 @@ async fn process_report_async(
         }
     }
 
-    // Return the download URL if uploaded, otherwise return a placeholder
-    Ok(download_url.unwrap_or_else(|| format!("delivered-directly:{}", report_id)))
+    // Return job completion info: (download_url, file_size, processing_time_ms, format, mime_type)
+    Ok((
+        download_url,
+        file_size as u64,
+        processing_time as u64,
+        extension.to_string(),
+        mime_type.to_string(),
+    ))
 }
 
 /// Deliver report via configured channels
@@ -714,21 +985,81 @@ async fn deliver_report(
         }
     }
 
-    // Configure WhatsApp if needed
+    // Configure WhatsApp if needed - supports both Evolution API and Green-API
     if delivery.whatsapp.is_some() {
-        if let (Ok(base_url), Ok(instance), Ok(api_key)) = (
-            std::env::var("EVOLUTION_API_URL"),
-            std::env::var("EVOLUTION_INSTANCE"),
-            std::env::var("EVOLUTION_API_KEY"),
-        ) {
-            tracing::info!(
-                "WhatsApp service configured: url={}, instance={}",
-                base_url,
-                instance
-            );
-            builder = builder.with_whatsapp(base_url, api_key, instance);
-        } else {
-            tracing::warn!("WhatsApp delivery requested but config not found. Required: EVOLUTION_API_URL, EVOLUTION_INSTANCE, EVOLUTION_API_KEY");
+        // Check which provider to use (default to Evolution API for backwards compatibility)
+        let provider_type = std::env::var("WHATSAPP_PROVIDER")
+            .unwrap_or_else(|_| "evolution".to_string())
+            .to_lowercase();
+
+        let whatsapp_provider: Option<
+            std::sync::Arc<dyn crate::infrastructure::notifications::WhatsAppProvider>,
+        > = match provider_type.as_str() {
+            "greenapi" | "green-api" | "green_api" => {
+                // Try Green-API configuration
+                if let (Ok(url), Ok(instance_id), Ok(token)) = (
+                    std::env::var("GREEN_API_URL"),
+                    std::env::var("GREEN_API_INSTANCE_ID"),
+                    std::env::var("GREEN_API_TOKEN"),
+                ) {
+                    // Use media URL if available for direct file uploads
+                    let client = if let Ok(media_url) = std::env::var("GREEN_API_MEDIA_URL") {
+                        tracing::info!(
+                            "WhatsApp service configured with Green-API: url={}, instance={}, media={}",
+                            url,
+                            instance_id,
+                            media_url
+                        );
+                        crate::infrastructure::notifications::GreenApiClient::with_media_url(
+                            url,
+                            media_url,
+                            instance_id,
+                            token,
+                        )
+                    } else {
+                        tracing::info!(
+                            "WhatsApp service configured with Green-API: url={}, instance={}",
+                            url,
+                            instance_id
+                        );
+                        crate::infrastructure::notifications::GreenApiClient::new(
+                            url,
+                            instance_id,
+                            token,
+                        )
+                    };
+                    Some(std::sync::Arc::new(client))
+                } else {
+                    tracing::warn!("Green-API selected but config not found. Required: GREEN_API_URL, GREEN_API_INSTANCE_ID, GREEN_API_TOKEN");
+                    None
+                }
+            }
+            _ => {
+                // Default to Evolution API
+                if let (Ok(base_url), Ok(instance), Ok(api_key)) = (
+                    std::env::var("EVOLUTION_API_URL"),
+                    std::env::var("EVOLUTION_INSTANCE"),
+                    std::env::var("EVOLUTION_API_KEY"),
+                ) {
+                    tracing::info!(
+                        "WhatsApp service configured with EvolutionAPI: url={}, instance={}",
+                        base_url,
+                        instance
+                    );
+                    Some(std::sync::Arc::new(
+                        crate::infrastructure::notifications::EvolutionApiClient::new(
+                            base_url, api_key, instance,
+                        ),
+                    ))
+                } else {
+                    tracing::warn!("EvolutionAPI selected but config not found. Required: EVOLUTION_API_URL, EVOLUTION_INSTANCE, EVOLUTION_API_KEY");
+                    None
+                }
+            }
+        };
+
+        if let Some(provider) = whatsapp_provider {
+            builder = builder.with_whatsapp_provider(provider);
         }
     }
 

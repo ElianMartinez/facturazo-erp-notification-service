@@ -1,10 +1,19 @@
 //! Notification services infrastructure
 //!
 //! This module contains implementations for various notification channels
+//!
+//! ## WhatsApp Providers
+//!
+//! The system supports multiple WhatsApp providers through the `WhatsAppProvider` trait:
+//! - `EvolutionAPIClient` - Evolution API v2
+//! - `GreenApiClient` - Green-API
+//!
+//! This allows switching providers without changing business logic.
 
 pub mod email;
 pub mod erp_report_notifier;
 pub mod evolution_api;
+pub mod green_api;
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -15,6 +24,7 @@ pub use email::EmailService;
 pub use erp_report_notifier::{DeliveryResult, ErpReportNotifier, ErpReportNotifierBuilder};
 pub use evolution_api::EvolutionAPIClient;
 pub use evolution_api::EvolutionAPIClient as EvolutionApiClient; // Alias
+pub use green_api::GreenApiClient;
 
 /// Trait for notification services
 #[async_trait]
@@ -24,6 +34,50 @@ pub trait NotificationService: Send + Sync {
 
     /// Check if service is available
     async fn health_check(&self) -> Result<bool>;
+}
+
+/// Trait for WhatsApp providers
+///
+/// This abstraction allows switching between different WhatsApp API providers
+/// (Evolution API, Green-API, etc.) without changing business logic.
+#[async_trait]
+pub trait WhatsAppProvider: Send + Sync {
+    /// Send a simple text message
+    async fn send_simple_text(&self, recipient: &str, message: &str) -> Result<String>;
+
+    /// Send a document (base64 encoded)
+    async fn send_document(
+        &self,
+        recipient: &str,
+        base64_content: &str,
+        filename: &str,
+        mimetype: &str,
+    ) -> Result<String>;
+
+    /// Send a PDF document
+    async fn send_pdf(
+        &self,
+        recipient: &str,
+        pdf_bytes: Vec<u8>,
+        filename: String,
+        caption: String,
+    ) -> Result<String>;
+
+    /// Send invoice notification with PDF
+    async fn send_invoice_notification(
+        &self,
+        phone: String,
+        invoice_number: String,
+        ncf: String,
+        amount: String,
+        pdf_bytes: Vec<u8>,
+    ) -> Result<String>;
+
+    /// Check if the provider is connected/available
+    async fn is_connected(&self) -> Result<bool>;
+
+    /// Get provider name for logging
+    fn provider_name(&self) -> &'static str;
 }
 
 /// Notification message content

@@ -14,7 +14,7 @@ use crate::infrastructure::cache::CacheService;
 use crate::infrastructure::generators::{
     DocumentType as GenDocType, GenerationOptions, GeneratorFactory,
 };
-use crate::infrastructure::notifications::{EmailService, EvolutionApiClient};
+use crate::infrastructure::notifications::{EmailService, WhatsAppProvider};
 use crate::infrastructure::storage::StorageService;
 
 /// Document generation orchestrator
@@ -29,7 +29,7 @@ pub struct DocumentOrchestrator {
     storage: Arc<StorageService>,
     cache: Arc<CacheService>,
     email_service: Option<Arc<EmailService>>,
-    whatsapp_service: Option<Arc<EvolutionApiClient>>,
+    whatsapp_service: Option<Arc<dyn WhatsAppProvider>>,
 }
 
 impl DocumentOrchestrator {
@@ -38,7 +38,7 @@ impl DocumentOrchestrator {
         storage: Arc<StorageService>,
         cache: Arc<CacheService>,
         email_service: Option<Arc<EmailService>>,
-        whatsapp_service: Option<Arc<EvolutionApiClient>>,
+        whatsapp_service: Option<Arc<dyn WhatsAppProvider>>,
     ) -> Self {
         Self {
             generator_factory,
@@ -152,17 +152,19 @@ pub struct DocumentResult {
 
 /// Notification orchestrator
 ///
-/// Coordinates notification delivery via multiple channels
+/// Coordinates notification delivery via multiple channels.
+/// Uses the `WhatsAppProvider` trait for WhatsApp integration,
+/// allowing different providers (Evolution API, Green-API, etc.)
 pub struct NotificationOrchestrator {
     email_service: Option<Arc<EmailService>>,
-    whatsapp_service: Option<Arc<EvolutionApiClient>>,
+    whatsapp_service: Option<Arc<dyn WhatsAppProvider>>,
     cache: Arc<CacheService>,
 }
 
 impl NotificationOrchestrator {
     pub fn new(
         email_service: Option<Arc<EmailService>>,
-        whatsapp_service: Option<Arc<EvolutionApiClient>>,
+        whatsapp_service: Option<Arc<dyn WhatsAppProvider>>,
         cache: Arc<CacheService>,
     ) -> Self {
         Self {

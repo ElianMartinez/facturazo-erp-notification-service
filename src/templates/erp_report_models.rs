@@ -156,24 +156,34 @@ pub enum ProcessingMode {
 }
 
 /// Report header information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportInfo {
     /// Report code (e.g., "NCF_SUMMARY")
+    #[serde(default)]
     pub code: String,
 
     /// Report variant (e.g., "DETAILED")
     pub variant: Option<String>,
 
     /// Display title
+    #[serde(default)]
     pub title: String,
+
+    /// Report subtitle (e.g., "Ventas", "Compras")
+    #[serde(default)]
+    pub subtitle: Option<String>,
 
     /// Breadcrumb path
     pub breadcrumb: Option<String>,
 
     /// Generation timestamp
-    #[serde(alias = "generated_at")]
+    #[serde(alias = "generated_at", default)]
     pub generated_at: String,
+
+    /// User display name who generated the report
+    #[serde(alias = "user_name", default)]
+    pub user_name: Option<String>,
 
     /// Date range filter (if applicable)
     #[serde(alias = "date_range")]
