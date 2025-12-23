@@ -878,7 +878,8 @@ async fn process_report_async(
 
         Some(url)
     } else {
-        // Store bytes in local file system for direct download (file <= 10MB)
+        // File is small enough (<= 10MB) - store locally for direct download endpoint
+        // Also will be attached directly to email/WhatsApp (not just a link)
         let temp_dir = PathBuf::from("./temp/reports");
         std::fs::create_dir_all(&temp_dir).ok();
 
@@ -887,17 +888,27 @@ async fn process_report_async(
             correlation_id = %correlation_id,
             file_size = file_size,
             file_path = %file_path.display(),
-            "File <= 10MB, storing bytes in local file for direct download"
+            threshold = MAX_ATTACHMENT_SIZE_BYTES,
+            "File <= 10MB, storing locally. Will be sent as direct attachment via email/WhatsApp"
         );
 
-        // Write bytes to file
+        // Write bytes to file for the download endpoint
         if let Err(e) = std::fs::write(&file_path, &bytes) {
             tracing::error!(correlation_id = %correlation_id, "Failed to write temp file: {:?}", e);
-            return Err(anyhow::anyhow!("Failed to store report file"));
+            // Don't fail - the file will still be sent as attachment
         }
 
-        // Return internal download URL (will be handled by download_report endpoint)
+        // Return internal download URL (for status endpoint and manual download)
         Some(format!("/api/v1/reports/{}/download", report_id))
+    };
+
+    // Determine if we should pass download_url to delivery
+    // For small files (<= 10MB), we want to attach directly via email/WhatsApp (pass None)
+    // For large files (> 10MB), we pass the S3 URL so recipients get a download link instead
+    let delivery_download_url = if needs_s3_upload {
+        download_url.clone()
+    } else {
+        None // Small files: attach directly, don't send a link
     };
 
     let processing_time = start.elapsed().as_millis();
@@ -911,8 +922,17 @@ async fn process_report_async(
     );
 
     // Handle delivery if configured
+    // Note: We use delivery_download_url (None for small files) so that small files
+    // are attached directly to email/WhatsApp instead of sending a download link
     if payload.delivery.is_some() {
-        if let Err(e) = deliver_report(&payload, &bytes, extension, download_url.as_deref()).await {
+        if let Err(e) = deliver_report(
+            &payload,
+            &bytes,
+            extension,
+            delivery_download_url.as_deref(),
+        )
+        .await
+        {
             tracing::warn!(
                 correlation_id = %correlation_id,
                 "Delivery failed: {}", e
