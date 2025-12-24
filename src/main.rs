@@ -11,7 +11,9 @@ use pdf_services::api::{configure_routes, ApiState};
 use pdf_services::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use pdf_services::infrastructure::cache::CacheService;
 use pdf_services::infrastructure::generators::GeneratorFactory;
-use pdf_services::infrastructure::notifications::EmailService;
+use pdf_services::infrastructure::notifications::{
+    EmailService, EvolutionApiClient, GreenApiClient, WhatsAppProvider,
+};
 use pdf_services::infrastructure::storage::StorageService;
 use pdf_services::kafka::erp_messages::ErpIntegrationEvent;
 use pdf_services::kafka::handlers::{KafkaHandler, KafkaMessage};
@@ -248,18 +250,81 @@ async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<(
         }
     };
 
+    // Initialize WhatsApp service if configured
+    let whatsapp_service: Option<Arc<dyn WhatsAppProvider>> = {
+        let provider_type = match env::var("WHATSAPP_PROVIDER")
+            .unwrap_or_else(|_| "evolution".to_string())
+            .to_lowercase()
+            .as_str()
+        {
+            "green" | "greenapi" | "green-api" => WhatsAppProviderType::GreenApi,
+            _ => WhatsAppProviderType::Evolution,
+        };
+
+        match provider_type {
+            WhatsAppProviderType::Evolution => {
+                match (
+                    env::var("EVOLUTION_API_URL").ok(),
+                    env::var("EVOLUTION_API_KEY").ok(),
+                    env::var("EVOLUTION_INSTANCE").ok(),
+                ) {
+                    (Some(url), Some(api_key), Some(instance)) => {
+                        info!(
+                            "Kafka worker: WhatsApp service configured with EvolutionAPI, instance: {}",
+                            instance
+                        );
+                        Some(Arc::new(EvolutionApiClient::new(url, api_key, instance))
+                            as Arc<dyn WhatsAppProvider>)
+                    }
+                    _ => {
+                        warn!("Kafka worker: WhatsApp service not configured - EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE required");
+                        None
+                    }
+                }
+            }
+            WhatsAppProviderType::GreenApi => {
+                match (
+                    env::var("GREEN_API_URL").ok(),
+                    env::var("GREEN_API_INSTANCE_ID").ok(),
+                    env::var("GREEN_API_TOKEN").ok(),
+                ) {
+                    (Some(url), Some(instance_id), Some(token)) => {
+                        let client = if let Some(media_url) = env::var("GREEN_API_MEDIA_URL").ok() {
+                            info!(
+                                "Kafka worker: WhatsApp service configured with Green-API, instance: {}, media_url: {}",
+                                instance_id, media_url
+                            );
+                            GreenApiClient::with_media_url(url, media_url, instance_id, token)
+                        } else {
+                            info!(
+                                "Kafka worker: WhatsApp service configured with Green-API, instance: {}",
+                                instance_id
+                            );
+                            GreenApiClient::new(url, instance_id, token)
+                        };
+                        Some(Arc::new(client) as Arc<dyn WhatsAppProvider>)
+                    }
+                    _ => {
+                        warn!("Kafka worker: WhatsApp service not configured - GREEN_API_URL, GREEN_API_INSTANCE_ID, GREEN_API_TOKEN required");
+                        None
+                    }
+                }
+            }
+        }
+    };
+
     // Initialize orchestrators
     let document_orchestrator = Arc::new(DocumentOrchestrator::new(
         generator_factory.clone(),
         storage_service.clone(),
         cache_service.clone(),
         email_service.clone(),
-        None, // whatsapp service
+        whatsapp_service.clone(),
     ));
 
     let notification_orchestrator = Arc::new(NotificationOrchestrator::new(
         email_service,
-        None, // whatsapp service
+        whatsapp_service,
         cache_service.clone(),
     ));
 
