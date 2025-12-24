@@ -90,6 +90,9 @@ pub struct ErpNotificationInfo {
     /// with plain text (message) and HTML (html_body) versions.
     #[serde(default)]
     pub html_body: Option<String>,
+    /// Human-readable filename for the document (e.g., "Cuadre_Caja_001.pdf")
+    #[serde(default)]
+    pub document_filename: Option<String>,
 }
 
 impl ErpIntegrationEvent {
@@ -136,7 +139,7 @@ impl ErpIntegrationEvent {
                     message: notif.message,
                     html_body: notif.html_body, // Pass HTML body from ERP Core
                     document_id: None,
-                    document_filename: None,
+                    document_filename: notif.document_filename, // Pass filename from ERP Core
                     callback_url: None,
                 };
 
@@ -160,7 +163,7 @@ impl ErpIntegrationEvent {
                         message: notif.message,
                         html_body: notif.html_body,
                         document_id: None,
-                        document_filename: None,
+                        document_filename: notif.document_filename, // Pass filename from ERP Core
                         callback_url: self.callback_url,
                     }))
                 } else {
@@ -218,7 +221,7 @@ impl ErpIntegrationEvent {
                     message: notif.message,
                     html_body: notif.html_body,
                     document_id: None,
-                    document_filename: None,
+                    document_filename: notif.document_filename, // Pass filename from ERP Core
                     callback_url: self.callback_url,
                 }))
             }
