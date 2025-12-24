@@ -335,6 +335,7 @@ pub struct AuthInfo {
     pub user_id: i64,
 }
 
+#[allow(dead_code)]
 fn estimate_processing_time(request: &DocumentRequest) -> u64 {
     match (&request.document_type, &request.priority) {
         (DocumentType::Invoice, Priority::High) => 30,

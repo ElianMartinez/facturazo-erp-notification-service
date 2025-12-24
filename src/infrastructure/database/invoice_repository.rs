@@ -4,6 +4,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 
 /// SQLite implementation of InvoiceRepository
+#[allow(dead_code)]
 pub struct SqliteInvoiceRepository {
     pool: SqlitePool,
 }

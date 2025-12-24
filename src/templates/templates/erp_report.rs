@@ -233,6 +233,7 @@ impl ErpReportTemplate {
     }
 
     /// Generate subtotal row for table (matches visible columns)
+    #[allow(dead_code)]
     fn generate_subtotal_row(
         &self,
         subtotal: &HashMap<String, serde_json::Value>,

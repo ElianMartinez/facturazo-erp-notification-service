@@ -42,6 +42,7 @@ pub struct ResilienceManager {
     pub circuit_breakers: CircuitBreakerRegistry,
     pub rate_limiters: Arc<TenantRateLimiter>,
     pub health_checker: Arc<HealthChecker>,
+    #[allow(dead_code)]
     config: ResilienceConfig,
 }
 

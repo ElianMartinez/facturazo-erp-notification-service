@@ -36,6 +36,7 @@ impl TopicConfig {
 /// Kafka Admin client for managing topics
 pub struct KafkaAdmin {
     client: AdminClient<DefaultClientContext>,
+    #[allow(dead_code)]
     brokers: String,
 }
 

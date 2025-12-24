@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let invoice_number = format!("E31000000{:03}", 1);
     let date = Local::now().format("%d/%m/%Y").to_string();
 
-    let qr_url = format!(
+    let _qr_url = format!(
         "https://dgii.gov.do/verificarNCF?RNC=133478341&NCF={}&Monto=3540.00",
         invoice_number
     );

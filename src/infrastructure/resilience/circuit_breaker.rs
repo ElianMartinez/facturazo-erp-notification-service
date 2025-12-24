@@ -215,6 +215,7 @@ pub struct CircuitOpenError {
 }
 
 /// Execute function with circuit breaker protection
+#[allow(dead_code)]
 pub async fn with_circuit_breaker<F, Fut, T, E>(
     cb: &CircuitBreaker,
     f: F,
@@ -242,6 +243,7 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
+#[allow(dead_code)]
 pub enum CircuitBreakerError<E> {
     #[error(transparent)]
     Open(#[from] CircuitOpenError),

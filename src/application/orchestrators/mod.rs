@@ -28,7 +28,9 @@ pub struct DocumentOrchestrator {
     generator_factory: Arc<GeneratorFactory>,
     storage: Arc<StorageService>,
     cache: Arc<CacheService>,
+    #[allow(dead_code)]
     email_service: Option<Arc<EmailService>>,
+    #[allow(dead_code)]
     whatsapp_service: Option<Arc<dyn WhatsAppProvider>>,
 }
 

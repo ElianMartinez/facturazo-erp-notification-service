@@ -34,6 +34,7 @@ impl Default for RetryConfig {
 }
 
 /// Retry policy
+#[allow(dead_code)]
 pub struct RetryPolicy {
     config: RetryConfig,
 }
@@ -122,6 +123,7 @@ where
 }
 
 /// Retry with condition
+#[allow(dead_code)]
 pub async fn with_retry_if<F, Fut, T, E, P>(
     config: &RetryConfig,
     operation_name: &str,
@@ -162,10 +164,12 @@ where
 }
 
 /// Builder for retry configuration
+#[allow(dead_code)]
 pub struct RetryBuilder {
     config: RetryConfig,
 }
 
+#[allow(dead_code)]
 impl RetryBuilder {
     pub fn new() -> Self {
         Self {

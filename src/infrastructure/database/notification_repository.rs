@@ -4,6 +4,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 
 /// SQLite implementation of NotificationRepository
+#[allow(dead_code)]
 pub struct SqliteNotificationRepository {
     pool: SqlitePool,
 }

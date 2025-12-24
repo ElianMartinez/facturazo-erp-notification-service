@@ -760,7 +760,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
     grand_total.insert("itbis18".to_string(), serde_json::json!(total_itbis));
 
     // Group rows by section
-    let mut ventas_rows: Vec<HashMap<String, serde_json::Value>> = rows
+    let ventas_rows: Vec<HashMap<String, serde_json::Value>> = rows
         .iter()
         .filter(|r| r.get("section").and_then(|v| v.as_str()) != Some("DEVOLUCIONES"))
         .cloned()

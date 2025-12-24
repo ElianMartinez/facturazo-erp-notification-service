@@ -4,6 +4,7 @@ use anyhow::Result;
 use sqlx::SqlitePool;
 
 /// SQLite implementation of NCFSequenceRepository
+#[allow(dead_code)]
 pub struct SqliteNCFSequenceRepository {
     pool: SqlitePool,
 }

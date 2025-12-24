@@ -9,6 +9,7 @@ use serde_json::Value;
 use std::path::PathBuf;
 
 /// Excel document generator
+#[allow(dead_code)]
 pub struct ExcelGenerator {
     work_dir: PathBuf,
 }
