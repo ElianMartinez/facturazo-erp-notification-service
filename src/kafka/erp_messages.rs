@@ -93,6 +93,9 @@ pub struct ErpNotificationInfo {
     /// Human-readable filename for the document (e.g., "Cuadre_Caja_001.pdf")
     #[serde(default)]
     pub document_filename: Option<String>,
+    /// Optional sender name override (company name) for the email "From" field
+    #[serde(default)]
+    pub sender_name: Option<String>,
 }
 
 impl ErpIntegrationEvent {
@@ -140,6 +143,7 @@ impl ErpIntegrationEvent {
                     html_body: notif.html_body, // Pass HTML body from ERP Core
                     document_id: None,
                     document_filename: notif.document_filename, // Pass filename from ERP Core
+                    sender_name: notif.sender_name,             // Pass company name from ERP Core
                     callback_url: None,
                 };
 
@@ -164,6 +168,7 @@ impl ErpIntegrationEvent {
                         html_body: notif.html_body,
                         document_id: None,
                         document_filename: notif.document_filename, // Pass filename from ERP Core
+                        sender_name: notif.sender_name, // Pass company name from ERP Core
                         callback_url: self.callback_url,
                     }))
                 } else {
@@ -178,6 +183,7 @@ impl ErpIntegrationEvent {
                         html_body: None,
                         document_id: self.document_id,
                         document_filename: None,
+                        sender_name: None, // Legacy format doesn't support sender_name
                         callback_url: self.callback_url,
                     }))
                 }
@@ -200,6 +206,7 @@ impl ErpIntegrationEvent {
                     message: self.message.unwrap_or_default(),
                     document_id: self.document_id,
                     document_filename: None,
+                    sender_name: None, // batch_notify doesn't support sender_name from top-level
                     parallel: self.parallel.unwrap_or(true),
                     concurrency: self.concurrency,
                     callback_url: self.callback_url,
@@ -222,6 +229,7 @@ impl ErpIntegrationEvent {
                     html_body: notif.html_body,
                     document_id: None,
                     document_filename: notif.document_filename, // Pass filename from ERP Core
+                    sender_name: notif.sender_name,             // Pass company name from ERP Core
                     callback_url: self.callback_url,
                 }))
             }

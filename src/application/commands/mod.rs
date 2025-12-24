@@ -36,6 +36,10 @@ pub struct SendNotificationCommand {
     /// If not provided, falls back to document_id
     #[serde(default)]
     pub document_filename: Option<String>,
+    /// Optional sender name override (company name) for the email "From" field
+    /// If not provided, uses the default SMTP_FROM_NAME
+    #[serde(default)]
+    pub sender_name: Option<String>,
     pub attachments: Vec<AttachmentData>,
 }
 

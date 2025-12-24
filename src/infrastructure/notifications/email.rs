@@ -42,6 +42,14 @@ impl EmailService {
     }
 
     /// Send an email with optional attachments
+    ///
+    /// # Arguments
+    /// * `to_email` - Recipient email address
+    /// * `subject` - Email subject
+    /// * `body` - Plain text body
+    /// * `html_body` - Optional HTML body
+    /// * `attachments` - List of attachments
+    /// * `from_name_override` - Optional override for the sender name (uses company name instead of default)
     pub async fn send_email(
         &self,
         to_email: &str,
@@ -50,17 +58,34 @@ impl EmailService {
         html_body: Option<&str>,
         attachments: Vec<EmailAttachment>,
     ) -> Result<String> {
+        self.send_email_with_from_name(to_email, subject, body, html_body, attachments, None)
+            .await
+    }
+
+    /// Send an email with optional attachments and custom sender name
+    pub async fn send_email_with_from_name(
+        &self,
+        to_email: &str,
+        subject: &str,
+        body: &str,
+        html_body: Option<&str>,
+        attachments: Vec<EmailAttachment>,
+        from_name_override: Option<&str>,
+    ) -> Result<String> {
+        let sender_name = from_name_override.unwrap_or(&self.from_name);
+
         info!(
-            "Sending email to {} with subject: {}, has_html: {}, attachments: {}",
+            "Sending email to {} with subject: {}, from: {}, has_html: {}, attachments: {}",
             to_email,
             subject,
+            sender_name,
             html_body.is_some(),
             attachments.len()
         );
 
         // Build the email
         let email = Message::builder()
-            .from(format!("{} <{}>", self.from_name, self.from_email).parse()?)
+            .from(format!("{} <{}>", sender_name, self.from_email).parse()?)
             .to(to_email.parse()?)
             .subject(subject);
 

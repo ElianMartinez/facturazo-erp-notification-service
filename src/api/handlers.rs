@@ -423,6 +423,7 @@ async fn send_notifications(
             priority: NotificationPriority::Normal,
             document_id: Some(document_id.to_string()),
             document_filename: None, // Will use document_id as fallback
+            sender_name: None,       // WhatsApp doesn't use sender name
             attachments: vec![],
         };
 
@@ -461,6 +462,7 @@ async fn send_notifications(
             priority: NotificationPriority::Normal,
             document_id: Some(document_id.to_string()),
             document_filename: None, // Will use document_id as fallback
+            sender_name: None,       // Uses default SMTP_FROM_NAME
             attachments: vec![],
         };
 

@@ -140,6 +140,12 @@ impl ErpReportNotifier {
 
         let mut result = DeliveryResult::new(DeliveryMethod::Email);
 
+        // Get company name for the sender "From" field
+        let company_name = payload
+            .company_info
+            .as_ref()
+            .map(|c| c.display_name.as_ref().unwrap_or(&c.name).clone());
+
         // Build email content - different template based on attachment vs link
         let subject = email_delivery.subject.clone().unwrap_or_else(|| {
             format!(
@@ -175,12 +181,13 @@ impl ErpReportNotifier {
             info!("Sending report email to: {}", recipient);
 
             match email_service
-                .send_email(
+                .send_email_with_from_name(
                     recipient,
                     &subject,
                     &plain_body,
                     Some(&html_body),
                     attachments.clone(),
+                    company_name.as_deref(),
                 )
                 .await
             {

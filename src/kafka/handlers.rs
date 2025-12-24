@@ -59,6 +59,9 @@ pub struct SendNotificationRequest {
     /// Human-readable filename for the document (e.g., "Cuadre_Caja_001.pdf")
     #[serde(default)]
     pub document_filename: Option<String>,
+    /// Optional sender name override (company name) for the email "From" field
+    #[serde(default)]
+    pub sender_name: Option<String>,
     pub callback_url: Option<String>,
 }
 
@@ -98,6 +101,9 @@ pub struct BatchNotifyRequest {
     /// Human-readable filename for the document (e.g., "Cuadre_Caja_001.pdf")
     #[serde(default)]
     pub document_filename: Option<String>,
+    /// Optional sender name override (company name) for the email "From" field
+    #[serde(default)]
+    pub sender_name: Option<String>,
     /// Process in parallel (recommended for large batches)
     pub parallel: bool,
     /// Max concurrent sends (default: 10)
@@ -122,6 +128,9 @@ pub struct NotificationTemplate {
     pub recipients: Vec<String>,
     pub subject: Option<String>,
     pub message: String,
+    /// Optional sender name override (company name) for the email "From" field
+    #[serde(default)]
+    pub sender_name: Option<String>,
     /// Process in parallel
     pub parallel: bool,
     /// Max concurrent sends (default: 10)
@@ -217,6 +226,7 @@ impl KafkaHandler {
             priority: crate::domain::notification::NotificationPriority::Normal,
             document_id: req.document_id.clone(),
             document_filename: req.document_filename,
+            sender_name: req.sender_name,
             attachments: vec![],
         };
 
@@ -343,6 +353,7 @@ impl KafkaHandler {
                             html_body: None,
                             document_id: req.document_id.clone(),
                             document_filename: req.document_filename.clone(),
+                            sender_name: req.sender_name.clone(),
                             callback_url: None,
                         };
                         self.handle_send_notification(notif_req)
@@ -380,6 +391,7 @@ impl KafkaHandler {
                     html_body: None,
                     document_id: req.document_id.clone(),
                     document_filename: req.document_filename.clone(),
+                    sender_name: req.sender_name.clone(),
                     callback_url: None,
                 };
 
@@ -439,6 +451,7 @@ impl KafkaHandler {
             message: req.notification.message,
             document_id: Some(document_id.clone()),
             document_filename: None,
+            sender_name: req.notification.sender_name,
             parallel: req.notification.parallel,
             concurrency: req.notification.concurrency,
             callback_url: None,

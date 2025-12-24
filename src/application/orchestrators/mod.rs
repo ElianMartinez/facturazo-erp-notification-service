@@ -256,14 +256,15 @@ impl NotificationOrchestrator {
             vec![]
         };
 
-        // Use send_email with HTML support
+        // Use send_email with HTML support and optional sender name override
         email_service
-            .send_email(
+            .send_email_with_from_name(
                 &command.recipient,
                 &subject,
                 &body,
                 html_body.as_deref(),
                 attachments,
+                command.sender_name.as_deref(),
             )
             .await?;
 
