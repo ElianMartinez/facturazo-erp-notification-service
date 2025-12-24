@@ -422,6 +422,7 @@ async fn send_notifications(
             template_vars: json!({ "message": message }),
             priority: NotificationPriority::Normal,
             document_id: Some(document_id.to_string()),
+            document_filename: None, // Will use document_id as fallback
             attachments: vec![],
         };
 
@@ -459,6 +460,7 @@ async fn send_notifications(
             template_vars: json!({ "body": body }),
             priority: NotificationPriority::Normal,
             document_id: Some(document_id.to_string()),
+            document_filename: None, // Will use document_id as fallback
             attachments: vec![],
         };
 

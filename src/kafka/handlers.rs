@@ -56,6 +56,9 @@ pub struct SendNotificationRequest {
     /// Optional HTML body for email notifications
     pub html_body: Option<String>,
     pub document_id: Option<String>,
+    /// Human-readable filename for the document (e.g., "Cuadre_Caja_001.pdf")
+    #[serde(default)]
+    pub document_filename: Option<String>,
     pub callback_url: Option<String>,
 }
 
@@ -92,6 +95,9 @@ pub struct BatchNotifyRequest {
     pub message: String,
     /// Optional: attach a document to all notifications
     pub document_id: Option<String>,
+    /// Human-readable filename for the document (e.g., "Cuadre_Caja_001.pdf")
+    #[serde(default)]
+    pub document_filename: Option<String>,
     /// Process in parallel (recommended for large batches)
     pub parallel: bool,
     /// Max concurrent sends (default: 10)
@@ -209,7 +215,8 @@ impl KafkaHandler {
             template_id: None,
             template_vars,
             priority: crate::domain::notification::NotificationPriority::Normal,
-            document_id: req.document_id,
+            document_id: req.document_id.clone(),
+            document_filename: req.document_filename,
             attachments: vec![],
         };
 
@@ -335,6 +342,7 @@ impl KafkaHandler {
                             message: req.message.clone(),
                             html_body: None,
                             document_id: req.document_id.clone(),
+                            document_filename: req.document_filename.clone(),
                             callback_url: None,
                         };
                         self.handle_send_notification(notif_req)
@@ -371,6 +379,7 @@ impl KafkaHandler {
                     message: req.message.clone(),
                     html_body: None,
                     document_id: req.document_id.clone(),
+                    document_filename: req.document_filename.clone(),
                     callback_url: None,
                 };
 
@@ -429,6 +438,7 @@ impl KafkaHandler {
             subject: req.notification.subject,
             message: req.notification.message,
             document_id: Some(document_id.clone()),
+            document_filename: None,
             parallel: req.notification.parallel,
             concurrency: req.notification.concurrency,
             callback_url: None,

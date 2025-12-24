@@ -239,8 +239,13 @@ impl NotificationOrchestrator {
             // Try to get document from cache
             let cache_key = format!("doc:{}:{}", command.tenant_id, doc_id);
             if let Some(bytes) = self.cache.get::<Vec<u8>>(&cache_key).await {
+                // Use document_filename if provided, otherwise fall back to doc_id
+                let filename = command
+                    .document_filename
+                    .clone()
+                    .unwrap_or_else(|| format!("{}.pdf", doc_id));
                 vec![crate::infrastructure::notifications::EmailAttachment {
-                    filename: format!("{}.pdf", doc_id),
+                    filename,
                     content_type: "application/pdf".to_string(),
                     data: bytes,
                 }]
@@ -290,7 +295,11 @@ impl NotificationOrchestrator {
         if let Some(doc_id) = &command.document_id {
             let cache_key = format!("doc:{}:{}", command.tenant_id, doc_id);
             if let Some(bytes) = self.cache.get::<Vec<u8>>(&cache_key).await {
-                let filename = format!("{}.pdf", doc_id);
+                // Use document_filename if provided, otherwise fall back to doc_id
+                let filename = command
+                    .document_filename
+                    .clone()
+                    .unwrap_or_else(|| format!("{}.pdf", doc_id));
                 whatsapp_service
                     .send_file(
                         &command.recipient,

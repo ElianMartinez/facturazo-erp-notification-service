@@ -32,6 +32,10 @@ pub struct SendNotificationCommand {
     pub template_vars: serde_json::Value,
     pub priority: crate::domain::notification::NotificationPriority,
     pub document_id: Option<String>,
+    /// Human-readable filename for the document attachment (e.g., "Factura_001.pdf")
+    /// If not provided, falls back to document_id
+    #[serde(default)]
+    pub document_filename: Option<String>,
     pub attachments: Vec<AttachmentData>,
 }
 

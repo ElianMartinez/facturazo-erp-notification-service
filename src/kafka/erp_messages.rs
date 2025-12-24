@@ -136,6 +136,7 @@ impl ErpIntegrationEvent {
                     message: notif.message,
                     html_body: notif.html_body, // Pass HTML body from ERP Core
                     document_id: None,
+                    document_filename: None,
                     callback_url: None,
                 };
 
@@ -159,6 +160,7 @@ impl ErpIntegrationEvent {
                         message: notif.message,
                         html_body: notif.html_body,
                         document_id: None,
+                        document_filename: None,
                         callback_url: self.callback_url,
                     }))
                 } else {
@@ -172,6 +174,7 @@ impl ErpIntegrationEvent {
                         message: self.message.unwrap_or_default(),
                         html_body: None,
                         document_id: self.document_id,
+                        document_filename: None,
                         callback_url: self.callback_url,
                     }))
                 }
@@ -193,6 +196,7 @@ impl ErpIntegrationEvent {
                     subject: self.subject,
                     message: self.message.unwrap_or_default(),
                     document_id: self.document_id,
+                    document_filename: None,
                     parallel: self.parallel.unwrap_or(true),
                     concurrency: self.concurrency,
                     callback_url: self.callback_url,
@@ -214,6 +218,7 @@ impl ErpIntegrationEvent {
                     message: notif.message,
                     html_body: notif.html_body,
                     document_id: None,
+                    document_filename: None,
                     callback_url: self.callback_url,
                 }))
             }
