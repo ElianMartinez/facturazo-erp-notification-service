@@ -1,4 +1,4 @@
-use actix_web::{web, HttpMessage, HttpRequest, HttpResponse};
+use actix_web::{web, HttpRequest, HttpResponse};
 use chrono::Utc;
 use flate2::read::GzDecoder;
 use serde_json::json;
@@ -10,7 +10,6 @@ use super::state::ApiState;
 use crate::application::commands::{GenerateDocumentCommand, SendNotificationCommand};
 use crate::domain::document::{DocumentFormat, DocumentType as DomainDocType};
 use crate::domain::notification::{NotificationChannel, NotificationPriority};
-use crate::generators::{ExcelGenerator, PdfGenerator};
 use crate::models::{
     DocumentRequest, DocumentResponse, DocumentStatus, DocumentType, NotificationConfig, Priority,
 };

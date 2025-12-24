@@ -6,8 +6,7 @@ use crate::domain::document::DocumentFormat;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use tokio::process::Command;
+use std::path::PathBuf;
 use uuid::Uuid;
 
 // PDF generators
@@ -208,14 +207,14 @@ impl GeneratorFactory {
                     .await?;
 
                 // Generate PDF
-                let mut pdf_bytes = generator.generate(&template, &data).await?;
+                let pdf_bytes = generator.generate(&template, &data).await?;
 
                 // Apply PDF-specific options
                 if options.compress {
                     // PDF compression would go here
                 }
 
-                if let Some(watermark) = &options.watermark {
+                if let Some(_watermark) = &options.watermark {
                     // Watermark application would go here
                 }
 

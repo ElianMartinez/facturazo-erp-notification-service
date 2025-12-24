@@ -2,7 +2,6 @@
 //!
 //! Provides fast, thread-safe caching for templates, configurations, and temporary data
 
-use anyhow::Result;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

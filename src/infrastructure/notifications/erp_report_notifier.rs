@@ -4,12 +4,10 @@
 //! Supports PDF, Excel, and CSV attachments
 
 use anyhow::{Context, Result};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use tracing::{error, info, warn};
 
 use crate::templates::erp_report_models::{
-    DeliveryMethod, DeliveryOptions, EmailDelivery, ErpReportPayload, OutputFormat,
-    WhatsAppDelivery,
+    DeliveryMethod, EmailDelivery, ErpReportPayload, OutputFormat, WhatsAppDelivery,
 };
 
 use std::sync::Arc;

@@ -23,7 +23,7 @@ impl ExcelGenerator {
         let title = data["title"].as_str().unwrap_or("Sheet1");
         let headers = data["headers"].as_array();
         let rows = data["rows"].as_array();
-        let use_memory_optimization = data["memory_optimization"].as_bool().unwrap_or(false);
+        let _use_memory_optimization = data["memory_optimization"].as_bool().unwrap_or(false);
 
         // Optimización de memoria para archivos grandes - comentado temporalmente
         // if use_memory_optimization {

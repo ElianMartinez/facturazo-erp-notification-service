@@ -6,7 +6,6 @@ use super::{DocumentGenerator, DocumentType};
 use anyhow::Result;
 use csv::Writer;
 use serde_json::Value;
-use std::io::Cursor;
 
 /// CSV document generator
 pub struct CsvGenerator;

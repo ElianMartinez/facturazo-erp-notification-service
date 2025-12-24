@@ -1,5 +1,5 @@
 use crate::templates::template_models::*;
-use crate::templates::template_trait::{TemplateRegistry, TypstTemplate};
+use crate::templates::template_trait::TemplateRegistry;
 use anyhow::Result;
 use serde_json;
 use std::collections::HashMap;

@@ -202,7 +202,10 @@ pub async fn generate_pdf_from_template(
     }
 }
 
-pub async fn list_templates(_req: HttpRequest, state: web::Data<ApiState>) -> Result<HttpResponse> {
+pub async fn list_templates(
+    _req: HttpRequest,
+    _state: web::Data<ApiState>,
+) -> Result<HttpResponse> {
     use std::fs;
     use std::path::Path;
 
@@ -242,9 +245,9 @@ pub async fn list_templates(_req: HttpRequest, state: web::Data<ApiState>) -> Re
 }
 
 pub async fn preview_template(
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<String>,
-    state: web::Data<ApiState>,
+    _state: web::Data<ApiState>,
 ) -> Result<HttpResponse> {
     let template_id = path.into_inner();
 

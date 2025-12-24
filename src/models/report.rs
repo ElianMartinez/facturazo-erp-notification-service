@@ -20,7 +20,7 @@ pub enum DataSource {
     /// Data comprimida (1-10MB)
     Compressed {
         format: CompressionFormat,
-        #[serde(with = "base64")]
+        #[serde(with = "base64_serde")]
         data: Vec<u8>,
     },
 
@@ -217,14 +217,15 @@ pub struct FormatStyle {
 }
 
 // Helper module for base64 encoding/decoding
-mod base64 {
+mod base64_serde {
+    use base64::Engine;
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_str(&base64::encode(bytes))
+        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(bytes))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -232,6 +233,8 @@ mod base64 {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        base64::decode(s).map_err(serde::de::Error::custom)
+        base64::engine::general_purpose::STANDARD
+            .decode(s)
+            .map_err(serde::de::Error::custom)
     }
 }

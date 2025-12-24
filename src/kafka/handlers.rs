@@ -5,12 +5,10 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{error, info, instrument, warn};
+use tracing::{error, info, instrument};
 
 use crate::application::commands::{GenerateDocumentCommand, Priority, SendNotificationCommand};
-use crate::application::orchestrators::{
-    DocumentOrchestrator, DocumentResult, NotificationOrchestrator, NotificationResult,
-};
+use crate::application::orchestrators::{DocumentOrchestrator, NotificationOrchestrator};
 use crate::domain::document::{DocumentFormat, DocumentType};
 use crate::domain::notification::NotificationChannel;
 

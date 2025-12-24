@@ -5,7 +5,7 @@
 
 use crate::kafka::handlers::{
     BatchNotifyRequest, GenerateAndNotifyRequest, GenerateDocumentRequest, KafkaMessage,
-    NotificationTemplate, SendNotificationRequest,
+    SendNotificationRequest,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
