@@ -400,36 +400,28 @@ impl WhatsAppProvider for EvolutionAPIClient {
         self.send_text(request).await
     }
 
-    async fn send_document(
+    async fn send_file(
         &self,
         recipient: &str,
-        base64_content: &str,
-        filename: &str,
-        mimetype: &str,
+        file_bytes: Vec<u8>,
+        filename: String,
+        mimetype: String,
+        caption: Option<String>,
     ) -> Result<String> {
+        use base64::Engine;
+        let base64_content = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
         let request = SendMediaRequest {
             number: normalize_dominican_phone(recipient),
             mediatype: MediaType::Document,
-            mimetype: mimetype.to_string(),
-            caption: filename.to_string(),
-            media: base64_content.to_string(),
-            file_name: filename.to_string(),
+            mimetype,
+            caption: caption.unwrap_or_else(|| filename.clone()),
+            media: base64_content,
+            file_name: filename,
             delay: None,
             link_preview: Some(false),
             mentions_every_one: Some(false),
         };
         self.send_media(request).await
-    }
-
-    async fn send_pdf(
-        &self,
-        recipient: &str,
-        pdf_bytes: Vec<u8>,
-        filename: String,
-        caption: String,
-    ) -> Result<String> {
-        EvolutionAPIClient::send_pdf(self, recipient.to_string(), pdf_bytes, filename, caption)
-            .await
     }
 
     async fn send_invoice_notification(

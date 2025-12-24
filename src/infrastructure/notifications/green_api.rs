@@ -59,21 +59,6 @@ pub struct GreenSendFileByUrlRequest {
     pub caption: Option<String>,
 }
 
-/// Request to send file by upload (base64)
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GreenSendFileByUploadRequest {
-    /// Chat ID format: "1809XXXXXXX@c.us"
-    pub chat_id: String,
-    /// File content in base64
-    pub file: String,
-    /// File name with extension
-    pub file_name: String,
-    /// Optional caption
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub caption: Option<String>,
-}
-
 /// Response from Green-API for successful operations
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -270,58 +255,6 @@ impl GreenApiClient {
         Ok(api_response.id_message)
     }
 
-    /// Send a file by upload using base64 (legacy method)
-    /// Prefer `send_file_bytes` for direct binary upload
-    pub async fn send_file_by_upload(
-        &self,
-        phone: &str,
-        base64_content: &str,
-        filename: &str,
-        caption: Option<&str>,
-    ) -> Result<String> {
-        let url = self.build_url("sendFileByUpload");
-        let chat_id = Self::to_chat_id(phone);
-
-        info!(
-            "Green-API: Uploading file {} to {} (base64)",
-            filename, chat_id
-        );
-
-        let request = GreenSendFileByUploadRequest {
-            chat_id,
-            file: base64_content.to_string(),
-            file_name: filename.to_string(),
-            caption: caption.map(|s| s.to_string()),
-        };
-
-        let response = self
-            .client
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to upload file to Green-API")?;
-
-        let status = response.status();
-        let body = response.text().await?;
-
-        if !status.is_success() {
-            error!("Green-API error uploading file: {} - {}", status, body);
-            anyhow::bail!("Green-API error: {}", body);
-        }
-
-        let api_response: GreenApiResponse =
-            serde_json::from_str(&body).context("Failed to parse Green-API response")?;
-
-        info!(
-            "Green-API: File uploaded successfully. ID: {}",
-            api_response.id_message
-        );
-
-        Ok(api_response.id_message)
-    }
-
     /// Send a file directly using multipart/form-data
     /// This is the preferred method for file uploads as it's more efficient
     /// than base64 encoding
@@ -424,14 +357,19 @@ impl GreenApiClient {
     }
 
     /// Simple wrapper for sending document (matches EvolutionAPIClient interface)
+    /// Decodes base64 and uses multipart upload for better reliability
     pub async fn send_document(
         &self,
         recipient: &str,
         base64_content: &str,
         filename: &str,
-        _mimetype: &str, // Green-API infers from filename
+        mimetype: &str,
     ) -> Result<String> {
-        self.send_file_by_upload(recipient, base64_content, filename, None)
+        use base64::Engine;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(base64_content)
+            .context("Failed to decode base64 content")?;
+        self.send_file_bytes(recipient, bytes, filename, mimetype, None)
             .await
     }
 
@@ -478,25 +416,22 @@ impl WhatsAppProvider for GreenApiClient {
         self.send_text(recipient, message).await
     }
 
-    async fn send_document(
+    async fn send_file(
         &self,
         recipient: &str,
-        base64_content: &str,
-        filename: &str,
-        _mimetype: &str,
-    ) -> Result<String> {
-        self.send_file_by_upload(recipient, base64_content, filename, None)
-            .await
-    }
-
-    async fn send_pdf(
-        &self,
-        recipient: &str,
-        pdf_bytes: Vec<u8>,
+        file_bytes: Vec<u8>,
         filename: String,
-        caption: String,
+        mimetype: String,
+        caption: Option<String>,
     ) -> Result<String> {
-        GreenApiClient::send_pdf(self, recipient, pdf_bytes, &filename, &caption).await
+        self.send_file_bytes(
+            recipient,
+            file_bytes,
+            &filename,
+            &mimetype,
+            caption.as_deref(),
+        )
+        .await
     }
 
     async fn send_invoice_notification(

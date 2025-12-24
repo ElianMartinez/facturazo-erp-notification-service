@@ -6,10 +6,10 @@
 
 use anyhow::Result;
 use std::sync::Arc;
-use tracing::{error, info, instrument, warn};
+use tracing::{info, instrument, warn};
 
-use crate::application::commands::{GenerateDocumentCommand, Priority, SendNotificationCommand};
-use crate::domain::document::{DocumentFormat, DocumentType};
+use crate::application::commands::{GenerateDocumentCommand, SendNotificationCommand};
+use crate::domain::document::DocumentType;
 use crate::infrastructure::cache::CacheService;
 use crate::infrastructure::generators::{
     DocumentType as GenDocType, GenerationOptions, GeneratorFactory,
@@ -284,19 +284,18 @@ impl NotificationOrchestrator {
             .send_simple_text(&command.recipient, message)
             .await?;
 
-        // Send document if provided
+        // Send document if provided - use multipart upload (more reliable than base64)
         if let Some(doc_id) = &command.document_id {
             let cache_key = format!("doc:{}:{}", command.tenant_id, doc_id);
             if let Some(bytes) = self.cache.get::<Vec<u8>>(&cache_key).await {
-                // Convert to base64 and send as document
-                use base64::Engine;
-                let base64_doc = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                let filename = format!("{}.pdf", doc_id);
                 whatsapp_service
-                    .send_document(
+                    .send_file(
                         &command.recipient,
-                        &base64_doc,
-                        &format!("{}.pdf", doc_id),
-                        "application/pdf",
+                        bytes,
+                        filename,
+                        "application/pdf".to_string(),
+                        None,
                     )
                     .await?;
             }

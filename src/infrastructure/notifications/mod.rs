@@ -45,22 +45,15 @@ pub trait WhatsAppProvider: Send + Sync {
     /// Send a simple text message
     async fn send_simple_text(&self, recipient: &str, message: &str) -> Result<String>;
 
-    /// Send a document (base64 encoded)
-    async fn send_document(
+    /// Send any file using binary bytes (multipart/form-data)
+    /// This is the preferred method for file uploads
+    async fn send_file(
         &self,
         recipient: &str,
-        base64_content: &str,
-        filename: &str,
-        mimetype: &str,
-    ) -> Result<String>;
-
-    /// Send a PDF document
-    async fn send_pdf(
-        &self,
-        recipient: &str,
-        pdf_bytes: Vec<u8>,
+        file_bytes: Vec<u8>,
         filename: String,
-        caption: String,
+        mimetype: String,
+        caption: Option<String>,
     ) -> Result<String>;
 
     /// Send invoice notification with PDF

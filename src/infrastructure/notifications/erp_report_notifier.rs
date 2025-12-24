@@ -268,9 +268,16 @@ impl ErpReportNotifier {
                             self.get_format_label(&payload.output.format)
                         );
 
-                        // Use the trait method for sending PDF/documents
+                        // Use the trait method for sending files
+                        let mimetype = self.get_mimetype(&payload.output.format);
                         match whatsapp_provider
-                            .send_pdf(number, document_bytes.clone(), filename.clone(), caption)
+                            .send_file(
+                                number,
+                                document_bytes.clone(),
+                                filename.clone(),
+                                mimetype,
+                                Some(caption),
+                            )
                             .await
                         {
                             Ok(doc_id) => {
@@ -972,6 +979,18 @@ _{}_
             OutputFormat::Xlsx => "Excel".to_string(),
             OutputFormat::Csv => "CSV".to_string(),
             OutputFormat::Html => "HTML".to_string(),
+        }
+    }
+
+    /// Get MIME type for format
+    fn get_mimetype(&self, format: &OutputFormat) -> String {
+        match format {
+            OutputFormat::Pdf => "application/pdf".to_string(),
+            OutputFormat::Xlsx => {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet".to_string()
+            }
+            OutputFormat::Csv => "text/csv".to_string(),
+            OutputFormat::Html => "text/html".to_string(),
         }
     }
 
