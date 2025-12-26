@@ -192,6 +192,14 @@ pub struct ReportInfo {
     /// As-of date filter (if applicable)
     #[serde(alias = "as_of_date")]
     pub as_of_date: Option<String>,
+
+    /// Billing mode indicator (CTA filter value)
+    /// None or empty = no mode displayed
+    /// "B" = Modo B (CTA=1)
+    /// "BB" = Modo BB (CTA=2)
+    /// "CONSOLIDADO" = Modo consolidado (CTA=0 or multiple)
+    #[serde(alias = "billing_mode", default)]
+    pub billing_mode: Option<String>,
 }
 
 /// Date range for report filters

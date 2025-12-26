@@ -751,7 +751,7 @@ impl ErpReportTemplate {
             String::new()
         };
 
-        // Center column: Title + Subtitle
+        // Center column: Title + Subtitle + Billing Mode badge
         let subtitle_content = report
             .subtitle
             .as_ref()
@@ -763,10 +763,30 @@ impl ErpReportTemplate {
             })
             .unwrap_or_default();
 
+        // Billing mode badge (shown when CTA is not 0/normal)
+        let billing_mode_badge = report
+            .billing_mode
+            .as_ref()
+            .filter(|m| !m.is_empty())
+            .map(|mode| {
+                let (bg_color, text_color, label) = match mode.to_uppercase().as_str() {
+                    "B" => ("rgb(59, 130, 246)", "white", "Modo B"),
+                    "BB" => ("rgb(139, 92, 246)", "white", "Modo BB"),
+                    "CONSOLIDADO" => ("rgb(107, 114, 128)", "white", "Modo Consolidado"),
+                    _ => ("rgb(107, 114, 128)", "white", mode.as_str()),
+                };
+                format!(
+                    " \\ #box(fill: {}, radius: 3pt, inset: (x: 6pt, y: 2pt))[#text(size: 8pt, fill: {})[#strong[{}]]]",
+                    bg_color, text_color, label
+                )
+            })
+            .unwrap_or_default();
+
         let center_content = format!(
-            r#"#text(size: 12pt, weight: "bold")[{}]{}"#,
+            r#"#text(size: 12pt, weight: "bold")[{}]{}{}"#,
             utils::escape_typst(&report.title),
-            subtitle_content
+            subtitle_content,
+            billing_mode_badge
         );
 
         // Right column: Breadcrumb + Period/Date + User

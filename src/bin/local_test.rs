@@ -834,6 +834,7 @@ fn build_ncf_summary_payload(records: i32, orientation: &str) -> ErpReportPayloa
                 to: "2025-12-15".to_string(),
             }),
             as_of_date: None,
+            billing_mode: None,
         },
         metadata: ReportMetadata {
             columns: vec![
@@ -1049,6 +1050,7 @@ fn build_ar_balance_payload(records: i32, orientation: &str) -> ErpReportPayload
             user_name: Some("Administrador Del Sistema".to_string()),
             date_range: None,
             as_of_date: Some("2025-12-15".to_string()),
+            billing_mode: None,
         },
         metadata: ReportMetadata {
             columns: vec![
@@ -1269,6 +1271,7 @@ fn build_generic_payload(variant: &str, records: i32, orientation: &str) -> ErpR
                 to: "2025-12-15".to_string(),
             }),
             as_of_date: None,
+            billing_mode: None,
         },
         metadata: ReportMetadata {
             columns: vec![
