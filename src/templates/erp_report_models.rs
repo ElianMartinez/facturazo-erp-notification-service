@@ -220,19 +220,19 @@ pub struct ReportMetadata {
     pub grouping: Option<GroupingConfig>,
 
     /// Whether to show grand total
-    #[serde(default)]
+    #[serde(alias = "show_grand_total", default)]
     pub show_grand_total: bool,
 
     /// Fields to aggregate for grand total
-    #[serde(default)]
+    #[serde(alias = "grand_total_fields", default)]
     pub grand_total_fields: Vec<String>,
 
     /// Whether report has running balance (for statements)
-    #[serde(default)]
+    #[serde(alias = "has_running_balance", default)]
     pub has_running_balance: bool,
 
     /// Whether to show opening balance
-    #[serde(default)]
+    #[serde(alias = "show_opening_balance", default)]
     pub show_opening_balance: bool,
 
     /// Aging buckets configuration (for AR reports)
