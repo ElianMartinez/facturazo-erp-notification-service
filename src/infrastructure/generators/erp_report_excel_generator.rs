@@ -74,12 +74,19 @@ impl ErpReportExcelGenerator {
             }
         };
 
-        // Write grand total if present
-        if let Some(ref grand_total) = payload.data.grand_total {
+        // Write grand total if present (check both grand_total and totals fields)
+        // For Flat data, C# uses GrandTotal; for Grouped data, C# uses Totals
+        let grand_total = payload
+            .data
+            .grand_total
+            .as_ref()
+            .or(payload.data.totals.as_ref());
+
+        if let Some(gt) = grand_total {
             Self::write_grand_total(
                 worksheet,
                 &payload.metadata.columns,
-                grand_total,
+                gt,
                 &formats,
                 current_row,
             )?;
@@ -242,7 +249,7 @@ impl ErpReportExcelGenerator {
         }
         row += 1;
 
-        // === Row 2: Address | Subtitle | Date ===
+        // === Row 2: Address | Subtitle + Billing Mode | Date ===
         // Left: Address
         if let Some(ref company) = payload.company_info {
             if let Some(ref address) = company.address {
@@ -250,9 +257,17 @@ impl ErpReportExcelGenerator {
             }
         }
 
-        // Center: Subtitle (e.g., "Ventas")
-        if let Some(ref subtitle) = payload.report.subtitle {
-            worksheet.write_string_with_format(row, center_col, subtitle, &formats.subtitle)?;
+        // Center: Subtitle + Billing Mode badge (e.g., "Ventas | MODO B")
+        let center_text = match (&payload.report.subtitle, &payload.report.billing_mode) {
+            (Some(subtitle), Some(mode)) if !mode.is_empty() => {
+                format!("{} | MODO {}", subtitle, mode)
+            }
+            (Some(subtitle), _) => subtitle.clone(),
+            (None, Some(mode)) if !mode.is_empty() => format!("MODO {}", mode),
+            _ => String::new(),
+        };
+        if !center_text.is_empty() {
+            worksheet.write_string_with_format(row, center_col, &center_text, &formats.subtitle)?;
         }
 
         // Right: Date

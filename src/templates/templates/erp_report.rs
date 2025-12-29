@@ -675,7 +675,7 @@ impl ErpReportTemplate {
             .map(|(lbl, _)| {
                 format!(
                     "table.cell(fill: rgb(31, 78, 121), align: center)[#text(size: 0.85em, fill: white)[#strong[{}]]]",
-                    lbl.to_uppercase()
+                    utils::escape_typst(&lbl.to_uppercase())
                 )
             })
             .collect::<Vec<_>>()

@@ -112,10 +112,17 @@ impl ErpReportCsvGenerator {
             }
         }
 
-        // Write grand total if present and enabled
+        // Write grand total if present and enabled (check both grand_total and totals fields)
+        // For Flat data, C# uses GrandTotal; for Grouped data, C# uses Totals
         if include_subtotals {
-            if let Some(ref grand_total) = payload.data.grand_total {
-                Self::write_grand_total(&mut output, &columns, grand_total, delimiter)?;
+            let grand_total = payload
+                .data
+                .grand_total
+                .as_ref()
+                .or(payload.data.totals.as_ref());
+
+            if let Some(gt) = grand_total {
+                Self::write_grand_total(&mut output, &columns, gt, delimiter)?;
             }
         }
 
