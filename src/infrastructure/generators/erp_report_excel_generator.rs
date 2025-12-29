@@ -861,6 +861,7 @@ mod tests {
                 user_name: None,
                 date_range: None,
                 as_of_date: None,
+                billing_mode: None,
             },
             metadata: ReportMetadata {
                 columns: vec![
