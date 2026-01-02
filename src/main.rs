@@ -101,11 +101,38 @@ async fn main() -> Result<()> {
     let http_handle = {
         let state = state.clone();
         let host = host.clone();
+        let max_payload_size = state.config.max_upload_size_bytes;
         tokio::spawn(async move {
             info!("Starting HTTP server on {}:{}", host, port);
+            info!(
+                "Max payload size configured: {} bytes ({} MB)",
+                max_payload_size,
+                max_payload_size / 1_048_576
+            );
+
+            // Configure payload limits to handle large report requests
+            let json_config = web::JsonConfig::default()
+                .limit(max_payload_size)
+                .error_handler(move |err, _req| {
+                    let message = format!("JSON payload error: {}", err);
+                    actix_web::error::InternalError::from_response(
+                        err,
+                        actix_web::HttpResponse::PayloadTooLarge().json(serde_json::json!({
+                            "error": "payload_too_large",
+                            "message": message,
+                            "max_size_bytes": max_payload_size
+                        })),
+                    )
+                    .into()
+                });
+
+            let payload_config = web::PayloadConfig::default().limit(max_payload_size);
+
             HttpServer::new(move || {
                 App::new()
                     .app_data(state.clone())
+                    .app_data(json_config.clone())
+                    .app_data(payload_config.clone())
                     .wrap(middleware::Logger::default())
                     .wrap(middleware::NormalizePath::trim())
                     .configure(configure_routes)
