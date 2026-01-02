@@ -5,13 +5,20 @@
 //! - Rate Limiter: Controls request rates per tenant/endpoint
 //! - Retry: Automatic retries with exponential backoff
 //! - Health Checks: Monitor dependency health
+//! - Concurrency Control: Adaptive resource-aware job scheduling
 
 mod circuit_breaker;
+pub mod concurrency;
 pub mod health;
 mod rate_limiter;
 mod retry;
 
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitState};
+pub use concurrency::{
+    AdaptiveSemaphore, ConcurrencyConfig, ConcurrencyController, ConcurrencyError,
+    ControllerMetrics, JobClassification, JobPermit, JobSize, JobType, ResourceDecision,
+    ResourceMonitor, ResourceSnapshot, SemaphoreStats,
+};
 pub use health::{DependencyHealth, DependencyStatus, HealthChecker, HealthStatus};
 pub use rate_limiter::{RateLimiter, RateLimiterConfig, TenantRateLimiter};
 pub use retry::{with_retry, RetryConfig, RetryPolicy};

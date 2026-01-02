@@ -13,6 +13,7 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         .route("/health", web::get().to(health_check))
         .route("/ready", web::get().to(readiness_check))
         .route("/metrics", web::get().to(metrics_endpoint))
+        .route("/concurrency", web::get().to(concurrency_metrics))
         // API v1
         .service(
             web::scope("/api/v1")
@@ -128,6 +129,54 @@ async fn metrics_endpoint() -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/plain; version=0.0.4")
         .body(buffer)
+}
+
+/// Concurrency controller metrics endpoint
+/// GET /concurrency
+async fn concurrency_metrics(state: web::Data<crate::api::ApiState>) -> HttpResponse {
+    let metrics = state.concurrency_controller.metrics();
+    let resources = state.concurrency_controller.resources();
+    let config = state.concurrency_controller.config();
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "healthy": state.concurrency_controller.is_healthy(),
+        "resources": {
+            "ram_percent": resources.ram_percent,
+            "ram_free_mb": resources.free_ram_bytes / (1024 * 1024),
+            "ram_used_mb": resources.used_ram_bytes / (1024 * 1024),
+            "ram_total_mb": resources.total_ram_bytes / (1024 * 1024),
+            "load_1min": resources.load_1min,
+            "load_5min": resources.load_5min,
+            "cpu_cores": resources.cpu_cores,
+            "health_score": resources.health_score()
+        },
+        "jobs": {
+            "accepted": metrics.jobs_accepted,
+            "rejected": metrics.jobs_rejected,
+            "completed": metrics.jobs_completed,
+            "failed": metrics.jobs_failed,
+            "active": metrics.active_jobs
+        },
+        "semaphore": {
+            "active_pdf": metrics.semaphore.active_pdf,
+            "active_excel": metrics.semaphore.active_excel,
+            "active_csv": metrics.semaphore.active_csv,
+            "queued_pdf": metrics.semaphore.queued_pdf,
+            "queued_excel": metrics.semaphore.queued_excel,
+            "queued_csv": metrics.semaphore.queued_csv,
+            "total_active": metrics.semaphore.total_active(),
+            "total_queued": metrics.semaphore.total_queued()
+        },
+        "limits": {
+            "max_pdf_concurrent": config.max_pdf_concurrent,
+            "max_excel_concurrent": config.max_excel_concurrent,
+            "max_csv_concurrent": config.max_csv_concurrent,
+            "max_total_concurrent": config.max_total_concurrent,
+            "ram_threshold_percent": config.ram_threshold_percent,
+            "load_threshold": config.load_threshold,
+            "adaptive_enabled": config.adaptive_enabled
+        }
+    }))
 }
 
 // Template endpoints

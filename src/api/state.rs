@@ -8,6 +8,7 @@ use crate::infrastructure::generators::GeneratorFactory;
 use crate::infrastructure::notifications::{
     EmailService, EvolutionApiClient, GreenApiClient, WhatsAppProvider,
 };
+use crate::infrastructure::resilience::{ConcurrencyConfig, ConcurrencyController};
 use crate::infrastructure::storage::StorageService;
 use crate::storage::s3::S3Client;
 use crate::templates::TemplateManager;
@@ -26,6 +27,8 @@ pub struct ApiState {
     pub notification_orchestrator: Arc<NotificationOrchestrator>,
     pub cache_service: Arc<CacheService>,
     pub storage_service: Arc<StorageService>,
+    /// Concurrency controller for resource-aware job scheduling
+    pub concurrency_controller: Arc<ConcurrencyController>,
 }
 
 /// WhatsApp provider selection
@@ -251,6 +254,21 @@ impl ApiState {
             cache_service.clone(),
         ));
 
+        // Initialize concurrency controller with environment config
+        let concurrency_config = ConcurrencyConfig::from_env();
+        tracing::info!(
+            "Concurrency controller initialized: max_pdf={}, max_excel={}, max_csv={}, max_total={}, adaptive={}",
+            concurrency_config.max_pdf_concurrent,
+            concurrency_config.max_excel_concurrent,
+            concurrency_config.max_csv_concurrent,
+            concurrency_config.max_total_concurrent,
+            concurrency_config.adaptive_enabled
+        );
+        let concurrency_controller = Arc::new(ConcurrencyController::new(concurrency_config));
+
+        // Start background resource monitoring
+        let _monitor_handle = concurrency_controller.start_monitor();
+
         Ok(ApiState {
             s3_client,
             template_manager,
@@ -261,6 +279,7 @@ impl ApiState {
             notification_orchestrator,
             cache_service,
             storage_service,
+            concurrency_controller,
         })
     }
 }

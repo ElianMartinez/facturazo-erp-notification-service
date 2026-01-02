@@ -1,6 +1,7 @@
 //! ERP Report API Handler
 //!
 //! Handles HTTP endpoints for ERP report generation (PDF, Excel, CSV)
+//! with adaptive concurrency control to prevent server overload.
 
 use actix_web::{web, HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
@@ -14,6 +15,7 @@ use uuid::Uuid;
 use super::error::ApiResult;
 use super::middleware::auth::extract_tenant_user_or_default;
 use super::state::ApiState;
+use crate::infrastructure::resilience::{ConcurrencyError, JobClassification, JobType};
 use crate::templates::erp_report_models::{ErpReportPayload, OutputFormat};
 use crate::templates::templates::ErpReportTemplate;
 use crate::templates::TypstTemplate;
@@ -105,6 +107,65 @@ const JOB_STATUS_TTL_SECS: u64 = 86400;
 /// Files larger than this will be uploaded to S3 and a download link sent instead
 const MAX_ATTACHMENT_SIZE_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
+// ============================================
+// Job Classification Helpers
+// ============================================
+
+/// Classify a report job for concurrency control
+fn classify_job(payload: &ErpReportPayload) -> JobClassification {
+    let job_type = match payload.output.format {
+        OutputFormat::Pdf => JobType::Pdf,
+        OutputFormat::Xlsx => JobType::Excel,
+        OutputFormat::Csv => JobType::Csv,
+        OutputFormat::Html => JobType::Pdf, // Treat HTML as PDF for now
+    };
+
+    // Convert i32 to usize safely
+    let record_count = payload.data.total_records.max(0) as usize;
+    JobClassification::new(job_type, record_count)
+}
+
+/// Convert concurrency error to HTTP response
+fn concurrency_error_response(error: ConcurrencyError) -> HttpResponse {
+    match error {
+        ConcurrencyError::ResourceExhausted { reason } => {
+            tracing::warn!("Report rejected - resources exhausted: {}", reason);
+            HttpResponse::ServiceUnavailable().json(json!({
+                "error": "server_overloaded",
+                "message": "Server is currently overloaded. Please try again later.",
+                "details": reason,
+                "retry_after": 30
+            }))
+        }
+        ConcurrencyError::QueueFull { job_type } => {
+            tracing::warn!("Report rejected - queue full for {:?}", job_type);
+            HttpResponse::ServiceUnavailable().json(json!({
+                "error": "queue_full",
+                "message": "Too many reports in queue. Please try again later.",
+                "job_type": format!("{:?}", job_type),
+                "retry_after": 60
+            }))
+        }
+        ConcurrencyError::Timeout => {
+            tracing::warn!("Report rejected - timeout waiting for resources");
+            HttpResponse::GatewayTimeout().json(json!({
+                "error": "timeout",
+                "message": "Timeout waiting for available resources",
+                "retry_after": 30
+            }))
+        }
+        ConcurrencyError::Backpressure => HttpResponse::ServiceUnavailable().json(json!({
+            "error": "backpressure",
+            "message": "System is under heavy load. Please try again later.",
+            "retry_after": 60
+        })),
+        _ => HttpResponse::InternalServerError().json(json!({
+            "error": "concurrency_error",
+            "message": "Failed to acquire resources for report generation"
+        })),
+    }
+}
+
 /// Generate ERP report synchronously
 /// POST /api/v1/reports/generate/sync
 pub async fn generate_erp_report_sync(
@@ -146,6 +207,32 @@ pub async fn generate_erp_report_sync(
         .clone()
         .unwrap_or_else(|| report_id.clone());
 
+    // Classify job for concurrency control
+    let classification = classify_job(&payload);
+    tracing::info!(
+        "Job classification: type={:?}, size={:?}, records={}, estimated_ram={}MB",
+        classification.job_type,
+        classification.job_size,
+        classification.record_count,
+        classification.estimated_ram_mb
+    );
+
+    // Acquire concurrency permit
+    let permit = match state
+        .concurrency_controller
+        .acquire_permit(&report_id, classification, payload.tenant_id as u64)
+        .await
+    {
+        Ok(permit) => permit,
+        Err(e) => {
+            return Ok(concurrency_error_response(e));
+        }
+    };
+
+    // Clone values needed outside the async block
+    let report_id_for_completion = report_id.clone();
+    let state_for_completion = state.clone();
+
     // Create a span for the entire request - all logs will include correlation_id
     let request_span = tracing::info_span!(
         "erp_report_sync",
@@ -156,7 +243,7 @@ pub async fn generate_erp_report_sync(
     );
 
     // Process within the span so all logs have correlation_id
-    async move {
+    let result = async move {
         tracing::info!(
             "Generating ERP report sync: variant={:?}, format={:?}, records={}",
             payload.report.variant,
@@ -287,7 +374,21 @@ pub async fn generate_erp_report_sync(
     }
     }
     .instrument(request_span)
-    .await
+    .await;
+
+    // Mark job as completed/failed and release permit
+    let success = result
+        .as_ref()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    state_for_completion
+        .concurrency_controller
+        .complete_job(&report_id_for_completion, success);
+
+    // Permit is dropped here, releasing the semaphore slot
+    drop(permit);
+
+    result
 }
 
 /// Generate ERP report and stream bytes directly
@@ -327,6 +428,25 @@ pub async fn generate_erp_report_stream(
         .clone()
         .unwrap_or_else(|| report_id.clone());
 
+    // Classify job for concurrency control
+    let classification = classify_job(&payload);
+
+    // Acquire concurrency permit
+    let permit = match state
+        .concurrency_controller
+        .acquire_permit(&report_id, classification, payload.tenant_id as u64)
+        .await
+    {
+        Ok(permit) => permit,
+        Err(e) => {
+            return Ok(concurrency_error_response(e));
+        }
+    };
+
+    // Clone values needed outside the async block
+    let report_id_for_completion = report_id.clone();
+    let state_for_completion = state.clone();
+
     // Create a span for the entire request - all logs will include correlation_id
     let request_span = tracing::info_span!(
         "erp_report_stream",
@@ -336,7 +456,7 @@ pub async fn generate_erp_report_stream(
         report_code = %payload.report.code
     );
 
-    async move {
+    let result = async move {
         tracing::info!(
             "Generating ERP report stream: variant={:?}, format={:?}, records={}",
             payload.report.variant,
@@ -409,7 +529,19 @@ pub async fn generate_erp_report_stream(
         }
     }
     .instrument(request_span)
-    .await
+    .await;
+
+    // Mark job as completed/failed and release permit
+    let success = result
+        .as_ref()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    state_for_completion
+        .concurrency_controller
+        .complete_job(&report_id_for_completion, success);
+    drop(permit);
+
+    result
 }
 
 /// Queue ERP report for async generation
@@ -448,14 +580,40 @@ pub async fn generate_erp_report_async(
         .clone()
         .unwrap_or_else(|| report_id.clone());
 
+    // Classify job for concurrency control
+    let classification = classify_job(&payload);
     tracing::info!(
         correlation_id = %correlation_id,
         report_id = %report_id,
         report_code = %payload.report.code,
         records = payload.data.total_records,
         estimated_time_secs = estimated_time,
+        job_type = ?classification.job_type,
+        job_size = ?classification.job_size,
         "Queueing ERP report for async processing"
     );
+
+    // Check if system can accept the job (pre-check without acquiring permit)
+    if !state.concurrency_controller.is_healthy() {
+        let metrics = state.concurrency_controller.metrics();
+        tracing::warn!(
+            report_id = %report_id,
+            ram_percent = metrics.ram_percent,
+            load = metrics.load_1min,
+            active_jobs = metrics.active_jobs,
+            "Rejecting async job - system unhealthy"
+        );
+        return Ok(HttpResponse::ServiceUnavailable().json(json!({
+            "error": "server_overloaded",
+            "message": "Server is currently overloaded. Please try again later.",
+            "retry_after": 30,
+            "metrics": {
+                "ram_percent": metrics.ram_percent,
+                "load_1min": metrics.load_1min,
+                "active_jobs": metrics.active_jobs
+            }
+        })));
+    }
 
     // Save initial job status to cache
     let job_status = JobStatus::new_processing(report_id.clone());
@@ -475,10 +633,51 @@ pub async fn generate_erp_report_async(
     let state_clone = state.clone();
     let report_id_clone = report_id.clone();
     let correlation_id_clone = correlation_id.clone();
+    let tenant_id = payload.tenant_id as u64;
 
-    // Spawn background task
+    // Spawn background task with concurrency control
     tokio::spawn(async move {
-        match process_report_async(state_clone.clone(), payload, report_id_clone.clone()).await {
+        // Acquire permit inside the spawned task
+        let permit = match state_clone
+            .concurrency_controller
+            .acquire_permit(&report_id_clone, classification, tenant_id)
+            .await
+        {
+            Ok(permit) => permit,
+            Err(e) => {
+                tracing::error!(
+                    correlation_id = %correlation_id_clone,
+                    report_id = %report_id_clone,
+                    "Failed to acquire permit: {:?}", e
+                );
+
+                // Update job status to failed
+                let cache_key = format!("{}{}", JOB_STATUS_CACHE_PREFIX, report_id_clone);
+                if let Some(job_status) =
+                    state_clone.cache_service.get::<JobStatus>(&cache_key).await
+                {
+                    let updated_status =
+                        job_status.fail("Server overloaded".to_string(), Some(format!("{:?}", e)));
+                    state_clone
+                        .cache_service
+                        .set(&cache_key, &updated_status, JOB_STATUS_TTL_SECS)
+                        .await;
+                }
+                return;
+            }
+        };
+
+        let result =
+            process_report_async(state_clone.clone(), payload, report_id_clone.clone()).await;
+
+        // Mark job completion
+        let success = result.is_ok();
+        state_clone
+            .concurrency_controller
+            .complete_job(&report_id_clone, success);
+        drop(permit);
+
+        match result {
             Ok((download_url, file_size, processing_time_ms, format, mime_type)) => {
                 tracing::info!(
                     correlation_id = %correlation_id_clone,

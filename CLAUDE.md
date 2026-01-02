@@ -49,6 +49,70 @@ Este proyecto en Rust genera documentos PDF usando Typst como motor de renderiza
 - `facturas/`: Facturas fiscales generadas
 - `reportes/`: Reportes de benchmark generados
 
+## Concurrency Control (Rate Limiting)
+
+El servicio incluye un sistema de control de concurrencia adaptativo que previene sobrecarga del servidor.
+
+### Variables de entorno
+
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `CONCURRENCY_MAX_PDF` | 2 | Máximo de reportes PDF simultáneos (Typst, más intensivo) |
+| `CONCURRENCY_MAX_EXCEL` | 4 | Máximo de reportes Excel simultáneos |
+| `CONCURRENCY_MAX_CSV` | 8 | Máximo de reportes CSV simultáneos |
+| `CONCURRENCY_MAX_TOTAL` | 6 | Máximo total de reportes simultáneos |
+| `CONCURRENCY_RAM_THRESHOLD` | 85 | % de RAM para rechazar nuevos jobs |
+| `CONCURRENCY_LOAD_THRESHOLD` | 4.0 | Load average máximo (1-min) |
+| `CONCURRENCY_MIN_FREE_RAM_MB` | 1024 | RAM mínima libre para jobs grandes |
+| `CONCURRENCY_ADAPTIVE_ENABLED` | true | Habilitar control adaptativo |
+| `CONCURRENCY_JOB_TIMEOUT_SECS` | 300 | Timeout por job (5 minutos) |
+
+### Clasificación de Jobs
+
+| Tipo | Registros | RAM Estimada |
+|------|-----------|--------------|
+| Small | < 500 | ~256 MB |
+| Medium | 500-5000 | ~768 MB |
+| Large | > 5000 | ~2 GB |
+
+### Endpoint de métricas
+
+```bash
+# Ver estado del controlador de concurrencia
+curl http://localhost:8080/concurrency
+```
+
+Respuesta de ejemplo:
+```json
+{
+  "healthy": true,
+  "resources": {
+    "ram_percent": 45,
+    "ram_free_mb": 4096,
+    "load_1min": 1.2,
+    "health_score": 78
+  },
+  "jobs": {
+    "accepted": 150,
+    "rejected": 2,
+    "completed": 148,
+    "active": 2
+  },
+  "semaphore": {
+    "active_pdf": 1,
+    "active_excel": 1,
+    "queued_pdf": 0
+  }
+}
+```
+
+### Comportamiento bajo carga
+
+1. **RAM > 85%** o **Load > 4.0**: Rechaza nuevos jobs con HTTP 503
+2. **RAM > 68%** o **Load > 3.2**: Aplica throttling (delay 1s)
+3. **Jobs grandes (>5000 registros)**: Requieren >= 1GB RAM libre
+4. **Cola llena**: Rechaza con HTTP 503 si hay más de 100 jobs encolados
+
 ## CI/CD Pipeline
 
 El proyecto usa GitHub Actions con self-hosted runners.
