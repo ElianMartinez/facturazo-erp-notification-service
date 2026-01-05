@@ -243,12 +243,190 @@ impl TemplateVersion {
 
 // Built-in templates
 mod templates {
-    // Use the invoice template from the invoice generator
-    pub const INVOICE_FISCAL: &str = r#"
-#set page(paper: "us-letter")
-= Invoice Template
-Fiscal invoice template with Dominican Republic compliance.
-    "#;
+    // Full fiscal invoice template with Dominican Republic compliance
+    // Uses nested structure matching InvoiceData from Core service:
+    // - company_info: {name, legal_name, tax_id, address, phone, email}
+    // - client_info: {name, tax_id, address, phone, email}
+    // - items: [{description, quantity, unit, unit_price, tax_rate, tax_amount, discount, total}]
+    // - totals: {subtotal, tax_amount, discount_amount, total, currency}
+    // - fiscal_info: {e_ncf, security_code, signature_date, expiration_date}
+    // - payment_info: {method, terms, paid}
+    pub const INVOICE_FISCAL: &str = r##"
+#set page(
+  paper: "us-letter",
+  margin: (top: 1.5cm, bottom: 1.5cm, left: 1.5cm, right: 1.5cm),
+)
+
+#set text(font: "Inter", size: 10pt, lang: "es")
+#set table(stroke: 0.5pt)
+
+// Header with company info
+#grid(
+  columns: (1fr, 1fr),
+  gutter: 1em,
+
+  // Left side - Company info
+  [
+    #text(size: 16pt, weight: "bold")[{{company_info.name}}]
+    #v(0.5em)
+    {{#if company_info.legal_name}}#text(size: 12pt)[{{company_info.legal_name}}]#v(0.3em){{/if}}
+
+    RNC: #text(weight: "bold")[{{company_info.tax_id}}] \
+    {{company_info.address.street}} {{company_info.address.line2}} \
+    Tel: {{company_info.phone}} \
+    {{#if company_info.email}}Email: #raw("{{company_info.email}}"){{/if}}
+  ],
+
+  // Right side - Invoice info
+  align(right)[
+    #rect(stroke: 2pt + rgb("#004080"), inset: 10pt)[
+      #text(size: 12pt, weight: "bold", fill: rgb("#004080"))[{{#if document_type_name}}{{document_type_name}}{{else}}Factura Electrónica{{/if}}]
+
+      #v(0.5em)
+      #text(size: 10pt)[
+        {{#if fiscal_info}}e-NCF: #text(weight: "bold")[{{fiscal_info.e_ncf}}]{{/if}}
+        {{#unless fiscal_info}}Factura: #text(weight: "bold")[{{invoice_number}}]{{/unless}} \
+        {{#if fiscal_info.expiration_date}}Válido hasta: {{fiscal_info.expiration_date}}{{/if}} \
+        Fecha: {{issue_date}} \
+        {{#if due_date}}Vencimiento: {{due_date}}{{/if}}
+      ]
+    ]
+  ]
+)
+
+#v(1em)
+
+// Customer info
+#rect(width: 100%, stroke: 0.5pt, inset: 10pt)[
+  #text(weight: "bold")[DATOS DEL CLIENTE]
+  #v(0.5em)
+  #table(
+    columns: (auto, 1fr, auto, 1fr),
+    stroke: none,
+    inset: 3pt,
+    align: (left, left, left, left),
+
+    [Nombre/Razón Social:], [#text(weight: "bold")[{{client_info.name}}]],
+    {{#if client_info.tax_id}}[RNC/Cédula:], [#text(weight: "bold")[{{client_info.tax_id}}]],{{/if}}
+    {{#unless client_info.tax_id}}[], [],{{/unless}}
+
+    {{#if client_info.phone}}[Teléfono:], [{{client_info.phone}}],{{/if}}
+    {{#unless client_info.phone}}[], [],{{/unless}}
+    {{#if client_info.email}}[Email:], [#raw("{{client_info.email}}")],{{/if}}
+    {{#unless client_info.email}}[], [],{{/unless}}
+
+    {{#if client_info.address}}[Dirección:], [#text[{{client_info.address}}]], [], [],{{/if}}
+  )
+]
+
+#v(1em)
+
+// Invoice items table
+#table(
+  columns: (0.8fr, 3fr, 0.8fr, 1fr, 1fr, 1.2fr),
+  inset: 6pt,
+  align: (center, left, center, right, right, right),
+
+  // Header
+  table.header(
+    [*Cant.*], [*Descripción*], [*U/M*], [*Precio*], [*ITBIS*], [*Total*]
+  ),
+
+  // Items
+  {{#each items}}
+  [{{quantity}}],
+  [{{description}}],
+  [{{unit}}],
+  [{{unit_price}}],
+  [{{tax_amount}}],
+  [{{total}}],
+  {{/each}}
+)
+
+#v(1em)
+
+// Totals
+#align(right)[
+  #table(
+    columns: (3fr, 2fr),
+    inset: 8pt,
+    align: (left, right),
+    stroke: none,
+
+    [Subtotal:], [#text(weight: "bold")[{{totals.currency}} {{totals.subtotal}}]],
+    {{#if totals.discount_amount}}[Descuento:], [#text(weight: "bold")[-{{totals.currency}} {{totals.discount_amount}}]],{{/if}}
+    [ITBIS:], [#text(weight: "bold")[{{totals.currency}} {{totals.tax_amount}}]],
+    {{#if totals.tip}}[Propina (10%):], [#text(weight: "bold")[{{totals.currency}} {{totals.tip}}]],{{/if}}
+
+    table.hline(stroke: 2pt),
+    [#text(size: 12pt, weight: "bold")[TOTAL:]],
+    [#text(size: 12pt, weight: "bold", fill: rgb("#004080"))[{{totals.currency}} {{totals.total}}]]
+  )
+]
+
+#v(1em)
+
+// Fiscal verification section
+{{#if fiscal_info}}
+#rect(width: 100%, stroke: 0.5pt, inset: 8pt, fill: rgb("#f8f9fa"))[
+  #grid(
+    columns: (1fr, auto),
+    column-gutter: 1em,
+    [
+      #text(weight: "bold")[Verificación DGII] \
+      #text(size: 9pt)[Código de Seguridad: {{fiscal_info.security_code}}] \
+      #text(size: 9pt)[Fecha Firma: {{fiscal_info.signature_date}}]
+    ],
+    [
+      {{#if qr_code_path}}
+      #align(center)[
+        #image("{{qr_code_path}}", width: 2.5cm)
+        #text(size: 7pt)[Escanea para verificar]
+      ]
+      {{/if}}
+    ]
+  )
+]
+{{/if}}
+
+#v(0.5em)
+
+// Payment terms
+{{#if payment_info}}
+#rect(width: 100%, stroke: 0.5pt, inset: 8pt, fill: rgb("#f0f0f0"))[
+  *Condiciones de Pago:* {{payment_info.method}} \
+  *Términos:* {{payment_info.terms}}
+]
+{{/if}}
+
+{{#if notes}}
+#v(0.5em)
+#rect(width: 100%, stroke: 0.5pt, inset: 8pt)[
+  *Notas:* \
+  {{notes}}
+]
+{{/if}}
+
+// Footer
+#v(1fr)
+#line(length: 100%, stroke: 0.5pt)
+#align(center)[
+  #text(size: 8pt, fill: gray)[
+    Retención según Ley 253-12: Las personas físicas y jurídicas que adquieran bienes y servicios \
+    que no sean contribuyentes del ITBIS retendrán el 30% del ITBIS facturado. \
+    Este documento debe conservarse por 7 años según requerimientos de la DGII.
+  ]
+]
+
+// Watermark if paid
+{{#if payment_info.paid}}
+#place(center + horizon)[
+  #rotate(45deg)[
+    #text(size: 72pt, fill: rgb("#00ff00").transparentize(80%), weight: "bold")[PAGADO]
+  ]
+]
+{{/if}}
+    "##;
 
     pub const QUOTATION: &str = r#"
 #set page(paper: "us-letter")

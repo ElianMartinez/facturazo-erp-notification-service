@@ -35,7 +35,18 @@ impl TemplateEngine {
             .ok_or_else(|| anyhow::anyhow!("Template no encontrado: {}", template_id))?;
 
         // Convertir TemplateData a JSON para la plantilla
-        let json_data = serde_json::to_value(&data)?;
+        let mut json_data = serde_json::to_value(&data)?;
+
+        // Inject work_dir into custom_fields so templates can generate assets (like QR codes)
+        // in the same directory where the .typ file will be saved
+        if let Some(obj) = json_data.as_object_mut() {
+            let custom_fields = obj
+                .entry("custom_fields")
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(cf) = custom_fields.as_object_mut() {
+                cf.insert("work_dir".to_string(), serde_json::json!(self.output_dir));
+            }
+        }
 
         // Validar los datos
         template.validate(&json_data)?;
@@ -64,8 +75,17 @@ impl TemplateEngine {
         // Limpiar archivo temporal
         fs::remove_file(&typ_path).ok();
 
-        // Limpiar assets temporales (si hubiera alguno)
-        // Los assets ahora se manejan dentro de cada plantilla
+        // Limpiar archivos QR temporales generados por las plantillas
+        if let Ok(entries) = fs::read_dir(&self.output_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with("qr_") && name.ends_with(".png") {
+                        fs::remove_file(&path).ok();
+                    }
+                }
+            }
+        }
 
         if !output.status.success() {
             return Err(anyhow::anyhow!(
@@ -92,6 +112,17 @@ impl TemplateEngine {
             .get(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template no encontrado: {}", template_id))?;
 
+        // Inject work_dir into custom_fields so templates can generate assets (like QR codes)
+        let mut json_data = json_data;
+        if let Some(obj) = json_data.as_object_mut() {
+            let custom_fields = obj
+                .entry("custom_fields")
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(cf) = custom_fields.as_object_mut() {
+                cf.insert("work_dir".to_string(), serde_json::json!(self.output_dir));
+            }
+        }
+
         // Validar los datos
         template.validate(&json_data)?;
 
@@ -115,6 +146,18 @@ impl TemplateEngine {
 
         // Limpiar archivo temporal
         fs::remove_file(&typ_path).ok();
+
+        // Limpiar archivos QR temporales generados por las plantillas
+        if let Ok(entries) = fs::read_dir(&self.output_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with("qr_") && name.ends_with(".png") {
+                        fs::remove_file(&path).ok();
+                    }
+                }
+            }
+        }
 
         if !output.status.success() {
             return Err(anyhow::anyhow!(

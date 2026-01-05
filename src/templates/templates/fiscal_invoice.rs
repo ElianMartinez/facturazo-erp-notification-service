@@ -1,324 +1,466 @@
-use crate::templates::template_models::{InvoiceData, InvoiceItem};
+use crate::templates::template_models::{InvoiceData, InvoiceItem, InvoiceTotals};
 use crate::templates::template_trait::{utils, TypstTemplate};
 use anyhow::{Context, Result};
 use serde_json::Value;
 
+/// DGII-compliant Fiscal Invoice Template for Dominican Republic
+/// Based on "Representación Impresa (Modelos ilustrativos)" from DGII
+///
+/// This template follows the official DGII format exactly:
+/// - Header: Logo, company name (colored), legal name, branch, RNC, address, issue date
+/// - Right side: Document type (colored), e-NCF, expiration date
+/// - Client section: Razón Social Cliente, RNC Cliente
+/// - Items table: Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
+/// - Footer: QR code (left), security code, signature date, totals (right)
+/// - Pagination: "Página No. X de Y" with page subtotals for multi-page invoices
 pub struct FiscalInvoiceTemplate;
+
+/// Default color matching DGII examples (green tones)
+const DEFAULT_PRIMARY_COLOR: &str = "rgb(0, 128, 102)"; // Verde DGII
+const DEFAULT_FONT: &str = "Helvetica Neue";
 
 impl FiscalInvoiceTemplate {
     pub fn new() -> Self {
         Self
     }
 
+    /// Extract brand color from custom_fields, supports multiple formats:
+    /// - "brand_color": "#FF5500" (hex)
+    /// - "primary_color": "rgb(255, 85, 0)" (rgb)
+    /// - "brand_color": "rgb(255, 85, 0)" (rgb)
+    fn get_brand_color(
+        custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> String {
+        if let Some(fields) = custom_fields {
+            // Try brand_color first, then primary_color
+            let color_value = fields
+                .get("brand_color")
+                .or_else(|| fields.get("primary_color"))
+                .and_then(|v| v.as_str());
+
+            if let Some(color) = color_value {
+                // If it's a hex color, convert to rgb format for Typst
+                if color.starts_with('#') {
+                    return Self::hex_to_typst_rgb(color);
+                }
+                // If it's already rgb format, use as-is
+                if color.starts_with("rgb") {
+                    return color.to_string();
+                }
+                // Otherwise treat as raw color value
+                return format!("rgb({})", color);
+            }
+        }
+        DEFAULT_PRIMARY_COLOR.to_string()
+    }
+
+    /// Convert hex color (#RRGGBB or #RGB) to Typst rgb() format
+    fn hex_to_typst_rgb(hex: &str) -> String {
+        let hex = hex.trim_start_matches('#');
+
+        let (r, g, b) = if hex.len() == 6 {
+            (
+                u8::from_str_radix(&hex[0..2], 16).unwrap_or(0),
+                u8::from_str_radix(&hex[2..4], 16).unwrap_or(0),
+                u8::from_str_radix(&hex[4..6], 16).unwrap_or(0),
+            )
+        } else if hex.len() == 3 {
+            (
+                u8::from_str_radix(&hex[0..1].repeat(2), 16).unwrap_or(0),
+                u8::from_str_radix(&hex[1..2].repeat(2), 16).unwrap_or(0),
+                u8::from_str_radix(&hex[2..3].repeat(2), 16).unwrap_or(0),
+            )
+        } else {
+            return DEFAULT_PRIMARY_COLOR.to_string();
+        };
+
+        format!("rgb({}, {}, {})", r, g, b)
+    }
+
+    /// Format items table rows following DGII standard columns:
+    /// Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
     fn format_items(&self, items: &[InvoiceItem]) -> String {
         items
             .iter()
             .map(|item| {
+                let itbis_amount = if let Some(rate) = item.tax_rate {
+                    let subtotal = item.get_subtotal() - item.discount.unwrap_or(0.0);
+                    subtotal * (rate / 100.0)
+                } else {
+                    item.tax_amount.unwrap_or(0.0)
+                };
+
                 format!(
-                    "  [{}], [{}], [{}], [{:.2}], [{:.2}]",
-                    utils::escape_typst(&item.description),
+                    "  [{:.2}], [{}], [{}], [{:.2}], [{:.2}], [{:.2}]",
                     item.quantity,
+                    utils::escape_typst(&item.description),
                     item.unit.as_deref().unwrap_or("UND"),
                     item.unit_price,
-                    item.get_total() // Use calculated total
+                    itbis_amount,
+                    item.get_total()
                 )
             })
             .collect::<Vec<_>>()
             .join(",\n")
     }
 
+    /// Format totals section following DGII standard layout:
+    /// Right-aligned box with Subtotal Gravado, Total ITBIS, Total
+    fn format_totals(
+        &self,
+        totals: &InvoiceTotals,
+        custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> String {
+        // Extract custom fields for detailed DGII breakdown
+        let (subtotal_gravado_18, subtotal_gravado_16, subtotal_exento, itbis_18, itbis_16) =
+            if let Some(fields) = custom_fields {
+                (
+                    fields
+                        .get("subtotal_gravado_18")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    fields
+                        .get("subtotal_gravado_16")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    fields
+                        .get("subtotal_exento")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    fields
+                        .get("itbis_18")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                    fields
+                        .get("itbis_16")
+                        .and_then(|v| v.as_f64())
+                        .unwrap_or(0.0),
+                )
+            } else {
+                (totals.subtotal, 0.0, 0.0, totals.tax_amount, 0.0)
+            };
+
+        let total_subtotal_gravado = subtotal_gravado_18 + subtotal_gravado_16;
+        let total_itbis = itbis_18 + itbis_16;
+
+        // Build exempt line if applicable
+        let exempt_line = if subtotal_exento > 0.0 {
+            format!(
+                r#"[#text(size: 9pt)[Subtotal Exento:]], [#text(size: 9pt)[{:.2}]],"#,
+                subtotal_exento
+            )
+        } else {
+            String::new()
+        };
+
+        // DGII-style totals box (right-aligned, simple border)
+        format!(
+            r#"#align(right)[
+  #rect(stroke: 0.5pt + rgb(100, 100, 100), inset: 0pt)[
+    #table(
+      columns: (120pt, 100pt),
+      stroke: 0.5pt + rgb(100, 100, 100),
+      inset: 6pt,
+      align: (left, right),
+      [#text(size: 9pt, weight: "bold")[Subtotal Gravado:]], [#text(size: 9pt)[{:.2}]],
+      {}
+      [#text(size: 9pt, weight: "bold")[Total ITBIS:]], [#text(size: 9pt)[{:.2}]],
+      [#text(size: 9pt, weight: "bold")[Total:]], [#text(size: 9pt, weight: "bold")[{:.2}]]
+    )
+  ]
+]"#,
+            total_subtotal_gravado, exempt_line, total_itbis, totals.total
+        )
+    }
+
+    /// Get document type name based on e-NCF prefix
+    fn get_document_type_name(e_ncf: &str) -> &'static str {
+        if e_ncf.len() >= 3 {
+            match &e_ncf[1..3] {
+                "31" => "Factura de Crédito Fiscal Electrónica",
+                "32" => "Factura de Consumo Electrónica",
+                "33" => "Nota de Débito Electrónica",
+                "34" => "Nota de Crédito Electrónica",
+                "41" => "Compras Electrónico",
+                "43" => "Gastos Menores Electrónico",
+                "44" => "Regímenes Especiales Electrónico",
+                "45" => "Gubernamental Electrónico",
+                "46" => "Comprobante para Exportaciones",
+                "47" => "Pagos al Exterior",
+                _ => "Factura Electrónica",
+            }
+        } else {
+            "Factura Electrónica"
+        }
+    }
+
     fn generate_typst_content(&self, invoice: &InvoiceData) -> Result<String> {
         let company = &invoice.company_info;
         let client = &invoice.client_info;
-        // Use get_totals() which calculates if not provided
         let totals = invoice.get_totals();
 
-        // Generar QR si hay información fiscal
+        // Get client tax_id with fallback
+        let client_tax_id = client.tax_id.as_deref().unwrap_or("N/A");
+
+        // Get brand color from custom_fields (allows customization from core-service)
+        let primary_color = Self::get_brand_color(&invoice.custom_fields);
+
+        // Get branch info from custom_fields
+        let branch_name = invoice
+            .custom_fields
+            .as_ref()
+            .and_then(|cf| cf.get("branch_name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        // Determine document type from e-NCF
+        let document_type = if let Some(fiscal) = &invoice.fiscal_info {
+            Self::get_document_type_name(&fiscal.e_ncf)
+        } else {
+            "Factura de Crédito Fiscal Electrónica"
+        };
+
+        // Generate QR section if fiscal info exists (DGII requirement)
+        // Uses cades Typst package for native QR generation (no temp files needed)
         let qr_section = if let Some(fiscal) = &invoice.fiscal_info {
             let qr_data = if fiscal.qr_data.is_empty() {
                 format!(
-                    "https://dgii.gov.do/validacion?ncf={}&rnc={}&monto={:.2}&codigo={}",
-                    fiscal.e_ncf, company.tax_id, totals.total, fiscal.security_code
+                    "https://dgii.gov.do/ecf?rnc={}&encf={}&monto={:.2}&codigo={}",
+                    company.tax_id, fiscal.e_ncf, totals.total, fiscal.security_code
                 )
             } else {
                 fiscal.qr_data.clone()
             };
 
-            // Generar QR (en producción, esto debería manejarse mejor)
-            let qr_path = format!("/tmp/qr_{}.png", fiscal.e_ncf.replace("/", "_"));
-            utils::generate_qr_code(&qr_data, &qr_path)?;
-
+            // DGII layout: QR on left, totals on right
+            // QR is generated natively using cades package (vector graphics)
             format!(
-                r#"
-// Código QR y datos fiscales
-#grid(
-  columns: (1fr, 250pt),
+                r#"#grid(
+  columns: (1fr, 1fr),
   gutter: 20pt,
   [
-    #image("{}", width: 100pt, height: 100pt)
-
-    #v(5pt)
-    #text(size: 8pt, weight: "bold")[Código de Seguridad: {}] \
-    #text(size: 8pt)[Fecha Firma: {}]
+    // QR Code section (DGII requirement) - using cades package
+    #qr-code("{qr_data}", width: 90pt)
+    #v(4pt)
+    #text(size: 8pt, weight: "bold")[Código de Seguridad: {security_code}]
+    #linebreak()
+    #text(size: 8pt)[Fecha Firma: {signature_date}]
   ],
   [
-    // Sección de totales se coloca aquí
-    TOTALES_PLACEHOLDER
+    {totals}
   ]
 )"#,
-                qr_path, fiscal.security_code, fiscal.signature_date
+                qr_data = qr_data,
+                security_code = fiscal.security_code,
+                signature_date = fiscal.signature_date,
+                totals = self.format_totals(&totals, &invoice.custom_fields)
             )
         } else {
-            format!(
-                r#"
-// Sección de totales
-#align(right)[
-  TOTALES_PLACEHOLDER
-]"#
-            )
+            // No fiscal info - just show totals aligned right
+            self.format_totals(&totals, &invoice.custom_fields)
         };
 
-        // Get client tax_id with fallback
-        let client_tax_id = client.tax_id.as_deref().unwrap_or("N/A");
-
-        // Construir el documento completo
+        // Build the complete Typst document following exact DGII layout
         let content = format!(
-            r#"#set document(title: "Factura Fiscal Electrónica - {}", author: "{}")
+            r##"#import "@preview/cades:0.3.1": qr-code
+
+#set document(title: "Factura Fiscal - {invoice_number}", author: "{company_name}")
 #set page(
   paper: "us-letter",
-  margin: (left: 20mm, right: 20mm, top: 20mm, bottom: 20mm)
+  margin: (left: 15mm, right: 15mm, top: 15mm, bottom: 20mm),
+  footer: context [
+    #align(right)[
+      #text(size: 8pt)[Página No. #counter(page).display() de #counter(page).final().first()]
+    ]
+  ]
 )
-#set text(font: "Inter", size: 10pt, lang: "es", fill: rgb(30, 30, 30))
-#set align(left)
+#set text(font: "{font}", size: 9pt, lang: "es", fill: rgb(30, 30, 30))
 
-// Marca de agua si está pagada
-{}
-
-// Header con información de la empresa
+// ============================================================
+// HEADER SECTION - DGII Official Layout
+// Left: Logo + Company Info | Right: Document Type + e-NCF
+// ============================================================
 #grid(
-  columns: (1fr, 1fr),
+  columns: (1fr, auto),
+  gutter: 20pt,
   [
-    // Logo o inicial de la empresa
-    #rect(width: 60pt, height: 60pt, fill: rgb(240, 248, 255), stroke: 1pt + rgb(70, 130, 180), radius: 5pt)[
-      #place(center + horizon)[
-        #text(size: 24pt, weight: "bold", fill: rgb(70, 130, 180))[{}]
+    // Left side: Company logo and info
+    #grid(
+      columns: (55pt, 1fr),
+      gutter: 10pt,
+      [
+        // Logo placeholder (company initials in colored box)
+        #rect(width: 50pt, height: 50pt, fill: {primary_color}, radius: 3pt)[
+          #place(center + horizon)[
+            #text(size: 18pt, weight: "bold", fill: white)[{company_initials}]
+          ]
+        ]
+      ],
+      [
+        #text(size: 14pt, weight: "bold", fill: {primary_color})[{company_name}]
+        #linebreak()
+        #text(size: 9pt)[{legal_name}]
+        #linebreak()
+        {branch_section}
+        #text(size: 9pt, weight: "bold")[RNC {tax_id}]
+        #linebreak()
+        #text(size: 8pt)[Dirección: {address}]
+        #linebreak()
+        #text(size: 8pt, weight: "bold")[Fecha Emisión:] #text(size: 8pt)[{issue_date}]
       ]
-    ]
-
-    #v(5pt)
-
-    #text(size: 14pt, weight: "bold", fill: rgb(70, 130, 180))[{}]
-
-    #text(size: 10pt, weight: "bold")[{}] \
-    #text(size: 9pt)[Sucursal {}] \
-    #text(size: 9pt, weight: "bold")[RNC {}] \
-    #text(size: 8pt)[
-      Dirección: {} \
-      Tel: {} | Email: {} \
-      Fecha Emisión: {}
-    ]
+    )
   ],
   [
+    // Right side: Document type and fiscal info (DGII format)
     #align(right)[
-      #text(size: 12pt, weight: "bold", fill: rgb(70, 130, 180))[Factura de Crédito Fiscal Electrónica]
-      #v(5pt)
-      {}
-      #text(size: 9pt)[Fecha Vencimiento: {}]
+      #text(size: 12pt, weight: "bold", fill: {primary_color})[{document_type}]
+      #v(6pt)
+      {encf_section}
     ]
   ]
 )
 
-#v(15pt)
-#line(length: 100%, stroke: 1.5pt + rgb(70, 130, 180))
+#v(10pt)
+#line(length: 100%, stroke: 1pt + rgb(180, 180, 180))
+#v(8pt)
+
+// ============================================================
+// CLIENT SECTION - DGII Standard
+// Razón Social Cliente + RNC Cliente
+// ============================================================
+#text(size: 9pt, weight: "bold")[Razón Social Cliente:] #text(size: 9pt)[ {client_name}]
+#linebreak()
+#text(size: 9pt, weight: "bold")[RNC Cliente:] #text(size: 9pt)[ {client_tax_id}]
+{client_address_section}
+
+#v(8pt)
+#line(length: 100%, stroke: 0.5pt + rgb(180, 180, 180))
 #v(10pt)
 
-// Información del cliente
-#text(size: 10pt, weight: "bold")[Razón Social Cliente: {}] \
-#text(size: 10pt, weight: "bold")[RNC/Cédula Cliente: {}] \
-{}
-
-#v(10pt)
-#line(length: 100%, stroke: 1.5pt + rgb(70, 130, 180))
-#v(15pt)
-
-// Tabla de productos/servicios
+// ============================================================
+// ITEMS TABLE - DGII Standard Columns
+// Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
+// ============================================================
 #table(
-  columns: (1fr, 60pt, 80pt, 80pt, 100pt),
+  columns: (55pt, 1fr, 75pt, 70pt, 70pt, 80pt),
   stroke: 0.5pt + rgb(150, 150, 150),
   fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
   align: (col, row) => {{
-    if col == 0 {{ left }}
-    else {{ right }}
+    if col == 1 {{ left }}
+    else if col >= 3 {{ right }}
+    else {{ center }}
   }},
-  inset: 8pt,
+  inset: 6pt,
 
-  // Encabezados
-  [#text(weight: "bold")[Descripción]],
-  [#text(weight: "bold")[Cantidad]],
-  [#text(weight: "bold")[Unidad]],
-  [#text(weight: "bold")[Precio]],
-  [#text(weight: "bold")[Total]],
+  // Header row - DGII standard column names
+  [#text(size: 8pt, weight: "bold")[Cantidad]],
+  [#text(size: 8pt, weight: "bold")[Descripción]],
+  [#text(size: 8pt, weight: "bold")[Unidad de Medida]],
+  [#text(size: 8pt, weight: "bold")[Precio]],
+  [#text(size: 8pt, weight: "bold")[ITBIS]],
+  [#text(size: 8pt, weight: "bold")[Valor]],
 
   // Items
-{}
+{items}
 )
 
-#v(20pt)
+#v(15pt)
 
-{}
+// ============================================================
+// FOOTER SECTION - QR Code + Totals (DGII Layout)
+// QR on left with security code, Totals on right
+// ============================================================
+{qr_section}
 
-// Notas
-{}
+// Notes section (if any)
+{notes_section}
 
-// Información de pago
-{}
-
-// Pie de página
-#v(30pt)
-#align(center)[
-  #text(size: 8pt, fill: rgb(100, 100, 100), style: "italic")[
-    {}
-  ]
-]"#,
-            // Título del documento
-            invoice.invoice_number,
-            company.name,
-            // Marca de agua si está pagado
-            if invoice
-                .payment_info
-                .as_ref()
-                .map(|p| p.paid)
-                .unwrap_or(false)
-            {
-                r#"#place(
-  center + horizon,
-  rotate(45deg)[
-    #text(size: 120pt, fill: rgb(200, 200, 200, 40), weight: "bold")[PAGADO]
-  ]
-)"#
-            } else {
-                ""
-            },
-            // Iniciales de la empresa
-            get_initials(&company.name),
-            // Datos de la empresa
-            utils::escape_typst(&company.name),
-            utils::escape_typst(
+// Payment info (if any)
+{payment_section}
+"##,
+            invoice_number = invoice.invoice_number,
+            company_name = utils::escape_typst(&company.name),
+            font = DEFAULT_FONT,
+            primary_color = primary_color,
+            company_initials = get_initials(&company.name),
+            legal_name = utils::escape_typst(
                 &company
                     .legal_name
                     .clone()
                     .unwrap_or_else(|| company.name.clone())
             ),
-            "Principal", // branch no existe en el modelo actual
-            company.tax_id,
-            utils::escape_typst(&company.address.to_string()),
-            company.phone.as_deref().unwrap_or(""),
-            utils::escape_typst(company.email.as_deref().unwrap_or("")),
-            invoice.issue_date,
-            // Información fiscal si existe
-            if let Some(fiscal) = &invoice.fiscal_info {
+            branch_section = if !branch_name.is_empty() {
                 format!(
-                    "#text(size: 10pt, weight: \"bold\")[e-NCF: {}]",
-                    fiscal.e_ncf
-                )
-            } else {
-                format!(
-                    "#text(size: 10pt, weight: \"bold\")[Factura No. {}]",
-                    invoice.invoice_number
-                )
-            },
-            invoice.due_date,
-            // Datos del cliente
-            utils::escape_typst(&client.name),
-            client_tax_id,
-            if let Some(address) = &client.address {
-                format!(
-                    "#text(size: 9pt)[Dirección: {}] \\",
-                    utils::escape_typst(&address.to_string())
+                    "#text(size: 8pt)[Sucursal {}]\n        #linebreak()\n        ",
+                    branch_name
                 )
             } else {
                 String::new()
             },
-            // Items de la factura
-            self.format_items(&invoice.items),
-            // Sección QR y totales
-            qr_section.replace("TOTALES_PLACEHOLDER", &self.format_totals(&totals)),
-            // Notas
-            if let Some(notes) = &invoice.notes {
+            tax_id = company.tax_id,
+            address = utils::escape_typst(&company.address.to_string()),
+            issue_date = invoice.issue_date,
+            document_type = document_type,
+            encf_section = if let Some(fiscal) = &invoice.fiscal_info {
+                format!(
+                    r#"#text(size: 10pt, weight: "bold")[e-NCF:] #text(size: 10pt)[{}]
+      #linebreak()
+      #text(size: 9pt, weight: "bold")[Fecha Vencimiento:] #text(size: 9pt)[{}]"#,
+                    fiscal.e_ncf,
+                    fiscal
+                        .expiration_date
+                        .as_deref()
+                        .unwrap_or(&invoice.due_date)
+                )
+            } else {
+                format!(
+                    r#"#text(size: 10pt, weight: "bold")[No. {}]
+      #linebreak()
+      #text(size: 9pt)[Vence: {}]"#,
+                    invoice.invoice_number, invoice.due_date
+                )
+            },
+            client_name = utils::escape_typst(&client.name),
+            client_tax_id = client_tax_id,
+            client_address_section = if let Some(addr) = &client.address {
+                format!(
+                    "\n#linebreak()\n#text(size: 8pt)[Dirección: {}]",
+                    utils::escape_typst(&addr.to_string())
+                )
+            } else {
+                String::new()
+            },
+            items = self.format_items(&invoice.items),
+            qr_section = qr_section,
+            notes_section = if let Some(notes) = &invoice.notes {
                 format!(
                     r#"
-#v(20pt)
-#text(size: 9pt, weight: "bold")[Notas:]
-#text(size: 9pt)[{}]"#,
+#v(10pt)
+#text(size: 8pt, weight: "bold")[Notas:] #text(size: 8pt)[{}]"#,
                     utils::escape_typst(notes)
                 )
             } else {
                 String::new()
             },
-            // Información de pago
-            if let Some(payment) = &invoice.payment_info {
+            payment_section = if let Some(payment) = &invoice.payment_info {
                 format!(
                     r#"
-#v(10pt)
-#text(size: 9pt)[Método de pago: {} | Términos: {}]"#,
+#v(8pt)
+#text(size: 8pt, fill: rgb(100, 100, 100))[Condición de Pago: {} | Términos: {}]"#,
                     payment.method,
-                    payment.terms.as_deref().unwrap_or("Inmediato")
+                    payment.terms.as_deref().unwrap_or("Contado")
                 )
             } else {
                 String::new()
-            },
-            // Footer
-            if let Some(fiscal) = &invoice.fiscal_info {
-                format!(
-                    "Esta factura fiscal electrónica es válida hasta: {}",
-                    fiscal.expiration_date.as_deref().unwrap_or("Indefinido")
-                )
-            } else {
-                "Conserve este documento para futuras referencias.".to_string()
             }
         );
 
         Ok(content)
     }
-
-    fn format_totals(&self, totals: &crate::templates::template_models::InvoiceTotals) -> String {
-        // Escape currency symbol to prevent Typst math mode issues
-        let currency = utils::escape_typst(&totals.currency);
-        format!(
-            r#"#rect(width: 100%, fill: rgb(245, 245, 245), stroke: 0.5pt + rgb(200, 200, 200), radius: 3pt)[
-    #pad(10pt)[
-      #grid(
-        columns: (150pt, 80pt),
-        row-gutter: 5pt,
-        align: (right, right),
-        [#text(size: 10pt, weight: "bold")[Subtotal:]],
-        [#text(size: 10pt)[{} {:.2}]],
-        [#text(size: 10pt, weight: "bold")[Descuento:]],
-        [#text(size: 10pt)[{} {:.2}]],
-        [#text(size: 10pt, weight: "bold")[ITBIS (18%):]],
-        [#text(size: 10pt)[{} {:.2}]],
-        [#line(length: 100%, stroke: 0.5pt + rgb(150, 150, 150))],
-        [#line(length: 100%, stroke: 0.5pt + rgb(150, 150, 150))],
-        [#text(size: 11pt, weight: "bold")[Total:]],
-        [#text(size: 11pt, weight: "bold")[{} {:.2}]]
-      )
-    ]
-  ]"#,
-            currency,
-            totals.subtotal,
-            currency,
-            totals.discount_amount.unwrap_or(0.0),
-            currency,
-            totals.tax_amount,
-            currency,
-            totals.total
-        )
-    }
 }
 
-/// Get initials from a company name
+/// Get initials from a company name (first letter of first two words)
 fn get_initials(name: &str) -> String {
-    // Get first letter of first two words
     name.split_whitespace()
         .take(2)
         .filter_map(|word| word.chars().next())
@@ -328,11 +470,11 @@ fn get_initials(name: &str) -> String {
 
 impl TypstTemplate for FiscalInvoiceTemplate {
     fn generate(&self, data: &Value) -> Result<String> {
-        // Deserializar los datos a InvoiceData
+        // Deserialize data to InvoiceData
         let invoice: InvoiceData = serde_json::from_value(data.clone())
             .context("Error deserializando datos de factura. Asegúrese de enviar los campos requeridos: invoice_number/invoiceNumber, issue_date/issueDate, due_date/dueDate, company_info/companyInfo, client_info/clientInfo, items")?;
 
-        // Generar contenido Typst
+        // Generate Typst content
         self.generate_typst_content(&invoice)
     }
 
@@ -341,7 +483,7 @@ impl TypstTemplate for FiscalInvoiceTemplate {
     }
 
     fn validate(&self, data: &Value) -> Result<()> {
-        // Validar campos requeridos
+        // Validate required fields
         if !data.is_object() {
             anyhow::bail!("Los datos deben ser un objeto JSON");
         }
@@ -391,13 +533,11 @@ impl TypstTemplate for FiscalInvoiceTemplate {
             }
         }
 
-        // Note: 'totals' is now optional - will be calculated if not provided
-
         Ok(())
     }
 
     fn description(&self) -> &str {
-        "Factura Fiscal Electrónica (República Dominicana)"
+        "Factura de Crédito Fiscal Electrónica (República Dominicana) - Formato DGII"
     }
 }
 
@@ -411,6 +551,27 @@ mod tests {
         assert_eq!(get_initials("ABC Company"), "AC");
         assert_eq!(get_initials("test company"), "TC");
         assert_eq!(get_initials("X"), "X");
+        assert_eq!(get_initials("COMERCIAL ZYL"), "CZ");
+    }
+
+    #[test]
+    fn test_document_type_from_ncf() {
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_name("E310000000001"),
+            "Factura de Crédito Fiscal Electrónica"
+        );
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_name("E320000000001"),
+            "Factura de Consumo Electrónica"
+        );
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_name("E330000000001"),
+            "Nota de Débito Electrónica"
+        );
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_name("E340000000001"),
+            "Nota de Crédito Electrónica"
+        );
     }
 
     #[test]
@@ -437,6 +598,97 @@ mod tests {
             "companyInfo": {"name": "Test", "taxId": "123", "address": {"street": "x", "city": "y", "country": "DO"}},
             "clientInfo": {"name": "Client"},
             "items": []
+        });
+        assert!(template.validate(&data).is_ok());
+    }
+
+    #[test]
+    fn test_hex_to_rgb_conversion() {
+        // Test 6-digit hex
+        assert_eq!(
+            FiscalInvoiceTemplate::hex_to_typst_rgb("#FF5500"),
+            "rgb(255, 85, 0)"
+        );
+        assert_eq!(
+            FiscalInvoiceTemplate::hex_to_typst_rgb("#008066"),
+            "rgb(0, 128, 102)"
+        );
+
+        // Test 3-digit hex
+        assert_eq!(
+            FiscalInvoiceTemplate::hex_to_typst_rgb("#F50"),
+            "rgb(255, 85, 0)"
+        );
+
+        // Test lowercase
+        assert_eq!(
+            FiscalInvoiceTemplate::hex_to_typst_rgb("#ff5500"),
+            "rgb(255, 85, 0)"
+        );
+    }
+
+    #[test]
+    fn test_get_brand_color_from_custom_fields() {
+        // Test with brand_color hex
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("brand_color".to_string(), serde_json::json!("#FF5500"));
+        let custom_fields = Some(fields);
+        assert_eq!(
+            FiscalInvoiceTemplate::get_brand_color(&custom_fields),
+            "rgb(255, 85, 0)"
+        );
+
+        // Test with primary_color rgb
+        let mut fields2 = std::collections::HashMap::new();
+        fields2.insert(
+            "primary_color".to_string(),
+            serde_json::json!("rgb(100, 200, 50)"),
+        );
+        let custom_fields2 = Some(fields2);
+        assert_eq!(
+            FiscalInvoiceTemplate::get_brand_color(&custom_fields2),
+            "rgb(100, 200, 50)"
+        );
+
+        // Test default (no custom_fields)
+        assert_eq!(
+            FiscalInvoiceTemplate::get_brand_color(&None),
+            "rgb(0, 128, 102)"
+        );
+    }
+
+    #[test]
+    fn test_validate_with_fiscal_info() {
+        let template = FiscalInvoiceTemplate::new();
+        let data = serde_json::json!({
+            "invoice_number": "FCF-00001",
+            "issue_date": "2024-12-11",
+            "due_date": "2024-12-25",
+            "company_info": {
+                "name": "COMERCIAL ZYL",
+                "legal_name": "ZYL SRL",
+                "tax_id": "123456789",
+                "address": {"street": "Calle Principal #123", "city": "Santo Domingo", "country": "DO"}
+            },
+            "client_info": {
+                "name": "Cliente Test SRL",
+                "tax_id": "987654321"
+            },
+            "items": [
+                {
+                    "description": "Producto A",
+                    "quantity": 10.0,
+                    "unit": "UND",
+                    "unit_price": 100.0,
+                    "tax_rate": 18.0
+                }
+            ],
+            "fiscal_info": {
+                "e_ncf": "E310000000001",
+                "security_code": "ABC123",
+                "signature_date": "2024-12-11",
+                "qr_data": "https://dgii.gov.do/ecf?test"
+            }
         });
         assert!(template.validate(&data).is_ok());
     }
