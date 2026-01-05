@@ -15,41 +15,54 @@ use std::sync::Arc;
 use tempfile::tempdir;
 
 /// Test basic PDF generation with invoice data
+/// Uses the DGII-compliant FiscalInvoiceTemplate format
 #[tokio::test]
 async fn test_generate_invoice_pdf() {
     let work_dir = tempdir().unwrap();
     let factory = GeneratorFactory::new(work_dir.path().to_path_buf());
 
+    // Data format expected by FiscalInvoiceTemplate (DGII-compliant)
     let invoice_data = json!({
         "invoice_number": "INV-2024-001",
-        "ncf": "E310000001",
         "issue_date": "2024-11-24",
         "due_date": "2024-12-24",
-        "seller": {
-            "company_name": "Test Company S.R.L.",
-            "rnc": "130123456",
-            "address": "Santo Domingo, DN",
-            "phone": "809-555-1234"
+        "company_info": {
+            "name": "Test Company S.R.L.",
+            "legal_name": "Test Company S.R.L.",
+            "tax_id": "130123456",
+            "address": {
+                "street": "Calle Principal #123",
+                "city": "Santo Domingo",
+                "state": "DN",
+                "country": "DO"
+            },
+            "phone": "809-555-1234",
+            "email": "test@company.com"
         },
-        "customer": {
+        "client_info": {
             "name": "Cliente de Prueba",
-            "rnc": "131654321",
-            "address": "Santiago, DR"
+            "tax_id": "131654321",
+            "address": {
+                "street": "Av. Duarte #456",
+                "city": "Santiago",
+                "country": "DO"
+            }
         },
         "items": [
             {
                 "description": "Producto de prueba",
-                "quantity": 2,
+                "quantity": 2.0,
+                "unit": "UND",
                 "unit_price": 100.0,
-                "subtotal": 200.0,
-                "itbis": 36.0,
-                "total": 236.0
+                "tax_rate": 18.0
             }
         ],
-        "subtotal": 200.0,
-        "itbis_total": 36.0,
-        "total": 236.0,
-        "currency": "DOP"
+        "fiscal_info": {
+            "e_ncf": "E310000000001",
+            "security_code": "ABC123",
+            "signature_date": "2024-11-24",
+            "qr_data": ""
+        }
     });
 
     let options = GenerationOptions {
@@ -266,6 +279,7 @@ async fn test_document_orchestrator() {
         None,
     );
 
+    // Data format expected by FiscalInvoiceTemplate (DGII-compliant)
     let command = GenerateDocumentCommand {
         tenant_id: "test-tenant".to_string(),
         user_id: Some("test-user".to_string()),
@@ -273,12 +287,36 @@ async fn test_document_orchestrator() {
         format: DocumentFormat::Pdf,
         data: json!({
             "invoice_number": "TEST-001",
-            "ncf": "E310000001",
-            "seller": { "company_name": "Test" },
-            "customer": { "name": "Customer" },
-            "items": [],
-            "subtotal": 0.0,
-            "total": 0.0
+            "issue_date": "2024-11-24",
+            "due_date": "2024-12-24",
+            "company_info": {
+                "name": "Test Company",
+                "tax_id": "130123456",
+                "address": {
+                    "street": "Calle Test #1",
+                    "city": "Santo Domingo",
+                    "country": "DO"
+                }
+            },
+            "client_info": {
+                "name": "Customer Test",
+                "tax_id": "131654321"
+            },
+            "items": [
+                {
+                    "description": "Test Item",
+                    "quantity": 1.0,
+                    "unit": "UND",
+                    "unit_price": 100.0,
+                    "tax_rate": 18.0
+                }
+            ],
+            "fiscal_info": {
+                "e_ncf": "E310000000001",
+                "security_code": "TEST123",
+                "signature_date": "2024-11-24",
+                "qr_data": ""
+            }
         }),
         template_id: "invoice_fiscal".to_string(),
         template_version: "1.0.0".to_string(),
