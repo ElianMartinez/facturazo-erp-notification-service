@@ -220,8 +220,16 @@ impl FiscalInvoiceTemplate {
             "Factura de Crédito Fiscal Electrónica"
         };
 
+        // Get work_dir from custom_fields (for QR generation)
+        let work_dir = invoice
+            .custom_fields
+            .as_ref()
+            .and_then(|cf| cf.get("work_dir"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("/tmp");
+
         // Generate QR section if fiscal info exists (DGII requirement)
-        // Uses cades Typst package for native QR generation (no temp files needed)
+        // Uses PNG image for maximum compatibility across Typst versions
         let qr_section = if let Some(fiscal) = &invoice.fiscal_info {
             let qr_data = if fiscal.qr_data.is_empty() {
                 format!(
@@ -232,15 +240,24 @@ impl FiscalInvoiceTemplate {
                 fiscal.qr_data.clone()
             };
 
+            // Generate QR code as PNG in work_dir (relative path for Typst)
+            let qr_filename = format!(
+                "qr_{}.png",
+                fiscal.e_ncf.replace("/", "_").replace("-", "_")
+            );
+            let qr_full_path = format!("{}/{}", work_dir, qr_filename);
+            utils::generate_qr_code(&qr_data, &qr_full_path)?;
+
             // DGII layout: QR on left, totals on right
-            // QR is generated natively using cades package (vector graphics)
             format!(
                 r#"#grid(
   columns: (1fr, 1fr),
   gutter: 20pt,
   [
-    // QR Code section (DGII requirement) - using cades package
-    #qr-code("{qr_data}", width: 90pt)
+    // QR Code section (DGII requirement)
+    #box(width: 90pt, height: 90pt)[
+      #image("{qr_filename}", width: 90pt, height: 90pt)
+    ]
     #v(4pt)
     #text(size: 8pt, weight: "bold")[Código de Seguridad: {security_code}]
     #linebreak()
@@ -250,7 +267,7 @@ impl FiscalInvoiceTemplate {
     {totals}
   ]
 )"#,
-                qr_data = qr_data,
+                qr_filename = qr_filename,
                 security_code = fiscal.security_code,
                 signature_date = fiscal.signature_date,
                 totals = self.format_totals(&totals, &invoice.custom_fields)
@@ -262,9 +279,7 @@ impl FiscalInvoiceTemplate {
 
         // Build the complete Typst document following exact DGII layout
         let content = format!(
-            r##"#import "@preview/cades:0.3.1": qr-code
-
-#set document(title: "Factura Fiscal - {invoice_number}", author: "{company_name}")
+            r##"#set document(title: "Factura Fiscal - {invoice_number}", author: "{company_name}")
 #set page(
   paper: "us-letter",
   margin: (left: 15mm, right: 15mm, top: 15mm, bottom: 20mm),

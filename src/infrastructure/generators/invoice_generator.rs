@@ -13,13 +13,15 @@ use std::path::PathBuf;
 pub struct InvoiceGenerator {
     typst_generator: TypstGenerator,
     fiscal_template: FiscalInvoiceTemplate,
+    work_dir: PathBuf,
 }
 
 impl InvoiceGenerator {
     pub fn new(work_dir: PathBuf) -> Self {
         Self {
-            typst_generator: TypstGenerator::new(work_dir),
+            typst_generator: TypstGenerator::new(work_dir.clone()),
             fiscal_template: FiscalInvoiceTemplate::new(),
+            work_dir,
         }
     }
 }
@@ -33,15 +35,27 @@ impl DocumentGenerator for InvoiceGenerator {
             tracing::info!("📦 Invoice data keys: {:?}", keys);
         }
 
+        // Inject work_dir into custom_fields so template can generate QR in correct directory
+        let mut data = data.clone();
+        if let Some(obj) = data.as_object_mut() {
+            let custom_fields = obj
+                .entry("custom_fields")
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(cf) = custom_fields.as_object_mut() {
+                cf.insert(
+                    "work_dir".to_string(),
+                    serde_json::json!(self.work_dir.to_string_lossy()),
+                );
+            }
+        }
+
         // Use the DGII-compliant FiscalInvoiceTemplate to generate Typst content
-        // This template uses the cades Typst package for native QR code generation
-        // (no temp files needed, vector graphics output)
-        let typst_content = self.fiscal_template.generate(data)?;
+        let typst_content = self.fiscal_template.generate(&data)?;
 
         tracing::info!("✅ Using FiscalInvoiceTemplate for DGII-compliant invoice");
 
         // Generate PDF from the Typst content
-        self.typst_generator.process(&typst_content, data).await
+        self.typst_generator.process(&typst_content, &data).await
     }
 
     fn supported_types(&self) -> Vec<DocumentType> {
