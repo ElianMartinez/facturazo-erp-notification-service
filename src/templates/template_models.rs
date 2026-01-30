@@ -315,6 +315,15 @@ pub struct InvoiceItem {
     /// Line total - calculated if not provided
     #[serde(default)]
     pub total: Option<f64>,
+
+    /// Document date for the line item (used for conduce/consumption invoices)
+    /// accepts: document_date, documentDate
+    #[serde(alias = "document_date", alias = "documentDate", default)]
+    pub document_date: Option<String>,
+
+    /// Notes for the line item (consumer info, plate number, etc.)
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 impl InvoiceItem {

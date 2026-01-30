@@ -77,9 +77,16 @@ impl FiscalInvoiceTemplate {
         format!("rgb({}, {}, {})", r, g, b)
     }
 
-    /// Format items table rows following DGII standard columns:
+    /// Check if items have document_date or notes (for conduce invoices)
+    fn has_extended_columns(items: &[InvoiceItem]) -> bool {
+        items
+            .iter()
+            .any(|item| item.document_date.is_some() || item.notes.is_some())
+    }
+
+    /// Format items table rows - standard 6 columns:
     /// Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
-    fn format_items(&self, items: &[InvoiceItem]) -> String {
+    fn format_items_standard(&self, items: &[InvoiceItem]) -> String {
         items
             .iter()
             .map(|item| {
@@ -102,6 +109,103 @@ impl FiscalInvoiceTemplate {
             })
             .collect::<Vec<_>>()
             .join(",\n")
+    }
+
+    /// Format items table rows - extended 8 columns for conduce invoices:
+    /// Fecha | Cantidad | Descripción | Nota | Unidad | Precio | ITBIS | Valor
+    fn format_items_extended(&self, items: &[InvoiceItem]) -> String {
+        items
+            .iter()
+            .map(|item| {
+                let itbis_amount = if let Some(rate) = item.tax_rate {
+                    let subtotal = item.get_subtotal() - item.discount.unwrap_or(0.0);
+                    subtotal * (rate / 100.0)
+                } else {
+                    item.tax_amount.unwrap_or(0.0)
+                };
+
+                let date_str = item.document_date.as_deref().unwrap_or("-");
+                let notes_str = item.notes.as_deref().unwrap_or("");
+
+                format!(
+                    "  [{}], [{:.2}], [{}], [{}], [{}], [{:.2}], [{:.2}], [{:.2}]",
+                    date_str,
+                    item.quantity,
+                    utils::escape_typst(&item.description),
+                    utils::escape_typst(notes_str),
+                    item.unit.as_deref().unwrap_or("UND"),
+                    item.unit_price,
+                    itbis_amount,
+                    item.get_total()
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n")
+    }
+
+    /// Generate the complete items table section with dynamic columns
+    fn generate_items_table(&self, items: &[InvoiceItem]) -> String {
+        let use_extended = Self::has_extended_columns(items);
+
+        if use_extended {
+            // Extended table with 8 columns for conduce invoices
+            let items_content = self.format_items_extended(items);
+            format!(
+                r#"#table(
+  columns: (60pt, 45pt, 1fr, 1fr, 50pt, 55pt, 55pt, 65pt),
+  stroke: 0.5pt + rgb(150, 150, 150),
+  fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
+  align: (col, row) => {{
+    if col == 2 || col == 3 {{ left }}
+    else if col >= 5 {{ right }}
+    else {{ center }}
+  }},
+  inset: 5pt,
+
+  // Header row - Extended columns for conduce invoices
+  [#text(size: 7pt, weight: "bold")[Fecha]],
+  [#text(size: 7pt, weight: "bold")[Cant.]],
+  [#text(size: 7pt, weight: "bold")[Descripción]],
+  [#text(size: 7pt, weight: "bold")[Nota]],
+  [#text(size: 7pt, weight: "bold")[Unidad]],
+  [#text(size: 7pt, weight: "bold")[Precio]],
+  [#text(size: 7pt, weight: "bold")[ITBIS]],
+  [#text(size: 7pt, weight: "bold")[Valor]],
+
+  // Items
+{items}
+)"#,
+                items = items_content
+            )
+        } else {
+            // Standard table with 6 columns
+            let items_content = self.format_items_standard(items);
+            format!(
+                r#"#table(
+  columns: (55pt, 1fr, 75pt, 70pt, 70pt, 80pt),
+  stroke: 0.5pt + rgb(150, 150, 150),
+  fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
+  align: (col, row) => {{
+    if col == 1 {{ left }}
+    else if col >= 3 {{ right }}
+    else {{ center }}
+  }},
+  inset: 6pt,
+
+  // Header row - DGII standard column names
+  [#text(size: 8pt, weight: "bold")[Cantidad]],
+  [#text(size: 8pt, weight: "bold")[Descripción]],
+  [#text(size: 8pt, weight: "bold")[Unidad de Medida]],
+  [#text(size: 8pt, weight: "bold")[Precio]],
+  [#text(size: 8pt, weight: "bold")[ITBIS]],
+  [#text(size: 8pt, weight: "bold")[Valor]],
+
+  // Items
+{items}
+)"#,
+                items = items_content
+            )
+        }
     }
 
     /// Format totals section following DGII standard layout:
@@ -353,31 +457,11 @@ impl FiscalInvoiceTemplate {
 #v(10pt)
 
 // ============================================================
-// ITEMS TABLE - DGII Standard Columns
-// Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
+// ITEMS TABLE - Dynamic columns (6 standard or 8 for conduce)
+// Standard: Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
+// Extended: Fecha | Cant. | Descripción | Nota | Unidad | Precio | ITBIS | Valor
 // ============================================================
-#table(
-  columns: (55pt, 1fr, 75pt, 70pt, 70pt, 80pt),
-  stroke: 0.5pt + rgb(150, 150, 150),
-  fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
-  align: (col, row) => {{
-    if col == 1 {{ left }}
-    else if col >= 3 {{ right }}
-    else {{ center }}
-  }},
-  inset: 6pt,
-
-  // Header row - DGII standard column names
-  [#text(size: 8pt, weight: "bold")[Cantidad]],
-  [#text(size: 8pt, weight: "bold")[Descripción]],
-  [#text(size: 8pt, weight: "bold")[Unidad de Medida]],
-  [#text(size: 8pt, weight: "bold")[Precio]],
-  [#text(size: 8pt, weight: "bold")[ITBIS]],
-  [#text(size: 8pt, weight: "bold")[Valor]],
-
-  // Items
-{items}
-)
+{items_table}
 
 #v(15pt)
 
@@ -445,7 +529,7 @@ impl FiscalInvoiceTemplate {
             } else {
                 String::new()
             },
-            items = self.format_items(&invoice.items),
+            items_table = self.generate_items_table(&invoice.items),
             qr_section = qr_section,
             notes_section = if let Some(notes) = &invoice.notes {
                 format!(
