@@ -822,6 +822,8 @@ mod tests {
                 discount: None,
                 subtotal: None,
                 total: None,
+                document_date: None,
+                notes: None,
             }],
             totals: None,
             fiscal_info: None,

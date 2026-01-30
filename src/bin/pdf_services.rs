@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     [*Cant.*], [*Descripción*], [*Precio*], [*ITBIS*], [*Total*],
   ),
 
-  [1], [Servicio de Desarrollo Web], [RD$ 3,000.00], [RD$ 540.00], [RD$ 3,540.00],
+  [1], [Servicio de Desarrollo Web], [RD\$ 3,000.00], [RD\$ 540.00], [RD\$ 3,540.00],
 )
 
 #align(right)[
@@ -64,17 +64,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     columns: (150pt, 100pt),
     stroke: none,
     align: (right, right),
-    [*Subtotal:*], [RD$ 3,000.00],
-    [*ITBIS (18%):*], [RD$ 540.00],
+    [*Subtotal:*], [RD\$ 3,000.00],
+    [*ITBIS (18%):*], [RD\$ 540.00],
     table.hline(stroke: 1.5pt),
-    [*Total:*], [*RD$ 3,540.00*],
+    [*Total:*], [*RD\$ 3,540.00*],
   )
 ]
 
 #place(
   center + horizon,
-  float: true,
-  clearance: 3em,
   text(size: 72pt, fill: rgb(255, 0, 0, 30), weight: "bold")[PAGADA]
 )
 "#,

@@ -342,6 +342,7 @@ pub enum NotificationStatus {
 
 #[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
 
     // Tests would go here with mocked dependencies
