@@ -1,4 +1,12 @@
-//! Test fiscal invoice generation with all item fields
+//! Test fiscal invoice generation with pre-calculated data from core-service
+//!
+//! This simulates data that comes from InvoiceDetailsDto with ALL calculations done:
+//! - TaxableAmount1 (ITBIS 18%)
+//! - TaxableAmount2 (ITBIS 16%)
+//! - Itbis1Amount, Itbis2Amount
+//! - TipAmount (propina legal)
+//! - DiscountAmount
+//! - All line items pre-calculated
 //!
 //! Run: cargo run --bin test_fiscal_invoice
 
@@ -11,24 +19,30 @@ use std::path::PathBuf;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Generando factura fiscal con FiscalInvoiceTemplate (500 items)...\n");
+    println!("Generando factura fiscal con datos de InvoiceDetailsDto (500 items)...\n");
 
     let work_dir = PathBuf::from("./temp");
     std::fs::create_dir_all(&work_dir)?;
 
     let factory = GeneratorFactory::new(work_dir);
 
-    // Generate 500 items with ALL fields populated
+    // Simulate 500 items matching InvoiceDetailItemDto structure
+    // ALL values come pre-calculated from core-service
     let items: Vec<serde_json::Value> = (1..=500)
         .map(|i| {
+            // All these values come pre-calculated from core-service
             let unit_price = 100.0 + (i as f64 * 10.0);
             let quantity = 1.0 + (i % 10) as f64;
             let subtotal = unit_price * quantity;
-            let discount = if i % 5 == 0 { subtotal * 0.05 } else { 0.0 }; // 5% discount every 5th item
-            let taxable = subtotal - discount;
-            let tax_rate = 18.0;
-            let tax_amount = taxable * (tax_rate / 100.0);
-            let total = taxable + tax_amount;
+            let discount_percentage = if i % 5 == 0 { 5.0 } else { 0.0 };
+            let discount_amount = subtotal * (discount_percentage / 100.0);
+            let taxable_amount = subtotal - discount_amount;
+
+            // Tax rate alternates between 18% and 16%
+            let itbis_rate = if i % 3 == 0 { 16.0 } else { 18.0 };
+            let itbis_amount = taxable_amount * (itbis_rate / 100.0);
+            let line_total = taxable_amount + itbis_amount;
+            let is_exempt = false;
 
             let units = ["UND", "HRS", "KG", "LT", "MT", "CJ", "PAQ", "SRV"];
             let categories = [
@@ -42,47 +56,56 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "Mantenimiento",
             ];
 
+            // Matching InvoiceDetailItemDto structure
             json!({
                 "code": format!("PROD-{:04}", i),
-                "description": format!("{} {} - Item de prueba numero {} con descripcion extendida para verificar el manejo de texto largo en la factura",
-                    categories[(i - 1) as usize % categories.len()],
-                    i,
-                    i
+                "description": format!("{} {} - Item de prueba",
+                    categories[(i - 1) as usize % categories.len()], i
                 ),
                 "quantity": quantity,
                 "unit": units[(i - 1) as usize % units.len()],
                 "unit_price": unit_price,
-                "tax_rate": tax_rate,
-                "tax_amount": tax_amount,
-                "discount": if discount > 0.0 { Some(discount) } else { None::<f64> },
+                // Pre-calculated fields from core-service
+                "discount_percentage": discount_percentage,
+                "discount": discount_amount,
                 "subtotal": subtotal,
-                "total": total,
+                "tax_rate": itbis_rate,
+                "tax_amount": itbis_amount,
+                "is_exempt": is_exempt,
+                "total": line_total,
+                // Optional fields
                 "document_date": format!("2026-01-{:02}", ((i - 1) % 28) + 1),
-                "notes": format!("Nota del item {}: Referencia interna REF-{:06}, Lote: LOT-{:04}", i, i * 100, i)
+                "notes": format!("Ref: REF-{:06}", i * 100)
             })
         })
         .collect();
 
-    // Calculate totals
-    let total_subtotal: f64 = items
-        .iter()
-        .filter_map(|item| item["subtotal"].as_f64())
-        .sum();
-    let total_discount: f64 = items
-        .iter()
-        .filter_map(|item| item["discount"].as_f64())
-        .sum();
-    let total_tax: f64 = items
-        .iter()
-        .filter_map(|item| item["tax_amount"].as_f64())
-        .sum();
-    let grand_total: f64 = items.iter().filter_map(|item| item["total"].as_f64()).sum();
+    // ============================================================
+    // TOTALS FROM InvoiceDetailsDto - ALL PRE-CALCULATED
+    // These come from the core-service, pdf-service does NOT calculate
+    // ============================================================
 
-    // Datos de factura completos para FiscalInvoiceTemplate
+    // Simulating pre-calculated totals from core-service
+    let taxable_amount_1: f64 = 4787500.0; // Monto gravado ITBIS 18%
+    let taxable_amount_2: f64 = 2349375.0; // Monto gravado ITBIS 16%
+    let taxable_amount_exempt: f64 = 0.0; // Monto exento
+    let itbis_1_amount: f64 = 861750.0; // ITBIS 18%
+    let itbis_2_amount: f64 = 375900.0; // ITBIS 16%
+    let discount_amount: f64 = 45625.0; // Total descuentos
+    let tip_amount: f64 = 0.0; // Propina legal (10%)
+    let other_taxes_amount: f64 = 0.0; // Otros impuestos
+    let total_amount: f64 = 8374525.0; // Total factura
+
+    // ============================================================
+    // INVOICE DATA - Matching InvoiceDetailsDto structure
+    // ============================================================
     let invoice_data = json!({
         "invoice_number": "FAC-2026-0500",
         "issue_date": "2026-01-30",
         "due_date": "2026-02-28",
+        "currency": "DOP",
+
+        // Company info (from BranchOffice + Tenant)
         "company_info": {
             "name": "Facturazo ERP S.R.L.",
             "legal_name": "Facturazo ERP Soluciones Tecnologicas S.R.L.",
@@ -91,49 +114,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 "street": "Calle Principal #123, Torre Empresarial, Piso 5",
                 "city": "Santo Domingo",
                 "state": "Distrito Nacional",
-                "country": "Republica Dominicana",
-                "postal_code": "10101"
+                "country": "Republica Dominicana"
             },
             "phone": "809-555-1234",
-            "email": "facturacion@facturazo.com",
-            "website": "https://facturazo.com"
+            "email": "facturacion@facturazo.com"
         },
+
+        // Client info (from InvoiceCustomerInfo)
         "client_info": {
             "name": "Mega Distribuidora Nacional S.R.L.",
-            "legal_name": "Mega Distribuidora Nacional Importaciones y Exportaciones S.R.L.",
+            "legal_name": "Mega Distribuidora Nacional S.R.L.",
             "tax_id": "131999888",
             "address": {
-                "street": "Av. John F. Kennedy Km 6.5, Plaza Comercial Kennedy, Local 201-B",
+                "street": "Av. John F. Kennedy Km 6.5",
                 "city": "Santo Domingo",
                 "state": "Distrito Nacional",
-                "country": "Republica Dominicana",
-                "postal_code": "10501"
+                "country": "Republica Dominicana"
             },
             "phone": "809-567-8900",
             "email": "compras@megadistribuidora.com.do"
         },
+
+        // Items (from InvoiceDetailItemDto[])
         "items": items,
+
+        // Pre-calculated totals (from InvoiceTotals)
         "totals": {
-            "subtotal": total_subtotal,
-            "discount_total": total_discount,
-            "tax_total": total_tax,
-            "grand_total": grand_total
+            "subtotal": taxable_amount_1 + taxable_amount_2 + taxable_amount_exempt,
+            "discount_total": discount_amount,
+            "tax_total": itbis_1_amount + itbis_2_amount,
+            "grand_total": total_amount
         },
+
+        // DGII-specific fields for detailed breakdown
+        // Mapped from InvoiceDetailsDto fields
+        "custom_fields": {
+            // Subtotals by tax rate
+            "subtotal_gravado_18": taxable_amount_1,  // TaxableAmount1
+            "subtotal_gravado_16": taxable_amount_2,  // TaxableAmount2
+            "subtotal_exento": taxable_amount_exempt, // TaxableAmountExempt
+            // Pre-calculated combined totals
+            "subtotal_gravado": taxable_amount_1 + taxable_amount_2,
+            // ITBIS by rate
+            "itbis_18": itbis_1_amount,              // Itbis1Amount
+            "itbis_16": itbis_2_amount,              // Itbis2Amount
+            "total_itbis": itbis_1_amount + itbis_2_amount,
+            // Other amounts
+            "propina_legal": tip_amount,             // TipAmount
+            "total_descuento": discount_amount,      // DiscountAmount
+            "otros_impuestos": other_taxes_amount    // OtherTaxesAmount
+        },
+
+        // Fiscal info (from ElectronicInvoiceDetails)
         "fiscal_info": {
-            "e_ncf": "E310000000500",
-            "security_code": "MEGA-TEST-500",
-            "signature_date": "2026-01-30",
-            "authorization_number": "DGII-2026-0005000",
-            "qr_data": ""
+            "e_ncf": "E310000000500",                // Encf
+            "security_code": "MEGA-TEST-500",        // SecurityCode
+            "signature_date": "2026-01-30",          // SignedDate
+            "qr_data": ""                            // QrUrl
         },
+
+        // Payment info (from PaymentMethods)
         "payment_info": {
             "method": "Credito 30 dias",
-            "bank_name": "Banco Popular Dominicano",
-            "account_number": "801-123456-7",
             "terms": "Neto 30 dias"
         },
-        "notes": "Factura de prueba con 500 items para verificar rendimiento y paginacion del template FiscalInvoice. Todos los campos de items estan poblados incluyendo: code, description, quantity, unit, unit_price, tax_rate, tax_amount, discount, subtotal, total, document_date y notes.",
-        "currency": "DOP"
+
+        "notes": "Datos simulados de InvoiceDetailsDto con todos los campos pre-calculados."
     });
 
     let options = GenerationOptions {
@@ -147,11 +193,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Cliente: {}", invoice_data["client_info"]["name"]);
     println!("NCF: {}", invoice_data["fiscal_info"]["e_ncf"]);
     println!("Items: {}", invoice_data["items"].as_array().unwrap().len());
-    println!("\nTotales:");
-    println!("  Subtotal:  RD$ {:.2}", total_subtotal);
-    println!("  Descuento: RD$ {:.2}", total_discount);
-    println!("  ITBIS:     RD$ {:.2}", total_tax);
-    println!("  Total:     RD$ {:.2}", grand_total);
+
+    println!("\nTotales (de InvoiceDetailsDto):");
+    println!("  TaxableAmount1 (18%):   RD$ {:.2}", taxable_amount_1);
+    println!("  TaxableAmount2 (16%):   RD$ {:.2}", taxable_amount_2);
+    println!("  TaxableAmountExempt:    RD$ {:.2}", taxable_amount_exempt);
+    println!("  ----------------------------------");
+    println!("  Itbis1Amount (18%):     RD$ {:.2}", itbis_1_amount);
+    println!("  Itbis2Amount (16%):     RD$ {:.2}", itbis_2_amount);
+    println!("  ----------------------------------");
+    println!("  DiscountAmount:         RD$ {:.2}", discount_amount);
+    println!("  TipAmount:              RD$ {:.2}", tip_amount);
+    println!("  OtherTaxesAmount:       RD$ {:.2}", other_taxes_amount);
+    println!("  ==================================");
+    println!("  TotalAmount:            RD$ {:.2}", total_amount);
 
     println!("\nGenerando PDF...");
     let start = std::time::Instant::now();
@@ -180,7 +235,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 gen_result.document_bytes.len(),
                 gen_result.document_bytes.len() as f64 / 1024.0
             );
-            println!("   MIME Type: {}", gen_result.mime_type);
             println!("   Tiempo: {:.2?}", elapsed);
         }
         Err(e) => {

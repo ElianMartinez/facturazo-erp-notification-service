@@ -232,71 +232,162 @@ impl FiscalInvoiceTemplate {
     }
 
     /// Format totals section following DGII standard layout:
-    /// Right-aligned box with Subtotal Gravado, Total ITBIS, Total
+    /// Right-aligned box with all pre-calculated values from core-service
+    /// NO CALCULATIONS - just renders the values as provided
     fn format_totals(
         &self,
         totals: &InvoiceTotals,
         custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> String {
-        // Extract custom fields for detailed DGII breakdown if available
-        // Otherwise, fall back to totals from InvoiceTotals
-        let (subtotal_gravado_18, subtotal_gravado_16, subtotal_exento, itbis_18, itbis_16) =
-            if let Some(fields) = custom_fields {
-                let sg18 = fields.get("subtotal_gravado_18").and_then(|v| v.as_f64());
-                let sg16 = fields.get("subtotal_gravado_16").and_then(|v| v.as_f64());
-                let se = fields.get("subtotal_exento").and_then(|v| v.as_f64());
-                let i18 = fields.get("itbis_18").and_then(|v| v.as_f64());
-                let i16 = fields.get("itbis_16").and_then(|v| v.as_f64());
-
-                // If no DGII-specific fields provided, use the calculated totals
-                if sg18.is_none() && sg16.is_none() && i18.is_none() && i16.is_none() {
-                    (totals.subtotal, 0.0, 0.0, totals.tax_amount, 0.0)
-                } else {
-                    (
-                        sg18.unwrap_or(0.0),
-                        sg16.unwrap_or(0.0),
-                        se.unwrap_or(0.0),
-                        i18.unwrap_or(0.0),
-                        i16.unwrap_or(0.0),
-                    )
-                }
-            } else {
-                (totals.subtotal, 0.0, 0.0, totals.tax_amount, 0.0)
-            };
-
-        let total_subtotal_gravado = subtotal_gravado_18 + subtotal_gravado_16;
-        let total_itbis = itbis_18 + itbis_16;
-
-        // Build exempt line if applicable
-        let exempt_line = if subtotal_exento > 0.0 {
-            format!(
-                r#"[#text(size: 9pt)[Subtotal Exento:]], [#text(size: 9pt)[{}]],"#,
-                Self::format_currency(subtotal_exento)
+        // Extract ALL values from custom_fields - NO CALCULATIONS
+        // All these values should come pre-calculated from core-service
+        let (
+            subtotal_gravado_18,
+            subtotal_gravado_16,
+            subtotal_exento,
+            itbis_18,
+            itbis_16,
+            propina_legal,
+            total_descuento,
+            // Combined totals (also pre-calculated)
+            total_subtotal_gravado,
+            total_itbis,
+        ) = if let Some(fields) = custom_fields {
+            (
+                fields
+                    .get("subtotal_gravado_18")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                fields
+                    .get("subtotal_gravado_16")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                fields
+                    .get("subtotal_exento")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                fields
+                    .get("itbis_18")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                fields
+                    .get("itbis_16")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                fields
+                    .get("propina_legal")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                fields
+                    .get("total_descuento")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(totals.discount_amount.unwrap_or(0.0)),
+                // Use pre-calculated totals, fallback to InvoiceTotals
+                fields
+                    .get("subtotal_gravado")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(totals.subtotal),
+                fields
+                    .get("total_itbis")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(totals.tax_amount),
             )
         } else {
-            String::new()
+            // Fallback: use InvoiceTotals values directly
+            (
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                totals.discount_amount.unwrap_or(0.0),
+                totals.subtotal,
+                totals.tax_amount,
+            )
         };
+
+        // Build dynamic rows based on what values exist
+        let mut rows = Vec::new();
+
+        // Subtotal rows - show detailed breakdown if we have both rates
+        if subtotal_gravado_18 > 0.0 && subtotal_gravado_16 > 0.0 {
+            rows.push(format!(
+                r#"[#text(size: 9pt)[Subtotal Gravado 18%:]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(subtotal_gravado_18)
+            ));
+            rows.push(format!(
+                r#"[#text(size: 9pt)[Subtotal Gravado 16%:]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(subtotal_gravado_16)
+            ));
+        } else {
+            rows.push(format!(
+                r#"[#text(size: 9pt, weight: "bold")[Subtotal Gravado:]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(total_subtotal_gravado)
+            ));
+        }
+
+        // Exempt subtotal if applicable
+        if subtotal_exento > 0.0 {
+            rows.push(format!(
+                r#"[#text(size: 9pt)[Subtotal Exento:]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(subtotal_exento)
+            ));
+        }
+
+        // Discount if applicable
+        if total_descuento > 0.0 {
+            rows.push(format!(
+                r#"[#text(size: 9pt)[Descuento:]], [#text(size: 9pt)[-{}]]"#,
+                Self::format_currency(total_descuento)
+            ));
+        }
+
+        // ITBIS rows - show detailed breakdown if we have both rates
+        if itbis_18 > 0.0 && itbis_16 > 0.0 {
+            rows.push(format!(
+                r#"[#text(size: 9pt)[ITBIS 18%:]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(itbis_18)
+            ));
+            rows.push(format!(
+                r#"[#text(size: 9pt)[ITBIS 16%:]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(itbis_16)
+            ));
+        } else {
+            rows.push(format!(
+                r#"[#text(size: 9pt, weight: "bold")[Total ITBIS:]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(total_itbis)
+            ));
+        }
+
+        // Propina legal if applicable (10% for restaurants/hotels in DR)
+        if propina_legal > 0.0 {
+            rows.push(format!(
+                r#"[#text(size: 9pt)[Propina Legal (10%):]], [#text(size: 9pt)[{}]]"#,
+                Self::format_currency(propina_legal)
+            ));
+        }
+
+        // Total row
+        rows.push(format!(
+            r#"[#text(size: 9pt, weight: "bold")[Total:]], [#text(size: 9pt, weight: "bold")[{}]]"#,
+            Self::format_currency(totals.total)
+        ));
 
         // DGII-style totals box (right-aligned, simple border)
         format!(
             r#"#align(right)[
   #rect(stroke: 0.5pt + rgb(100, 100, 100), inset: 0pt)[
     #table(
-      columns: (120pt, 100pt),
+      columns: (130pt, 100pt),
       stroke: 0.5pt + rgb(100, 100, 100),
       inset: 6pt,
       align: (left, right),
-      [#text(size: 9pt, weight: "bold")[Subtotal Gravado:]], [#text(size: 9pt)[{}]],
       {}
-      [#text(size: 9pt, weight: "bold")[Total ITBIS:]], [#text(size: 9pt)[{}]],
-      [#text(size: 9pt, weight: "bold")[Total:]], [#text(size: 9pt, weight: "bold")[{}]]
     )
   ]
 ]"#,
-            Self::format_currency(total_subtotal_gravado),
-            exempt_line,
-            Self::format_currency(total_itbis),
-            Self::format_currency(totals.total)
+            rows.join(",\n      ")
         )
     }
 
