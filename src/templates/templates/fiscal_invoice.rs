@@ -156,7 +156,7 @@ impl FiscalInvoiceTemplate {
   stroke: 0.5pt + rgb(150, 150, 150),
   fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
   align: (col, row) => {{
-    if col == 2 || col == 3 {{ left }}
+    if col == 2 or col == 3 {{ left }}
     else if col >= 5 {{ right }}
     else {{ center }}
   }},
