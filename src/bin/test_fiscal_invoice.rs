@@ -149,6 +149,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // DGII-specific fields for detailed breakdown
         // Mapped from InvoiceDetailsDto fields
         "custom_fields": {
+            // Payment condition: 05301 = Contado, 05302 = Crédito
+            "PaymentTypeCode": "05302",  // Factura a Crédito
             // Subtotals by tax rate
             "subtotal_gravado_18": taxable_amount_1,  // TaxableAmount1
             "subtotal_gravado_16": taxable_amount_2,  // TaxableAmount2

@@ -239,8 +239,21 @@ impl FiscalInvoiceTemplate {
         totals: &InvoiceTotals,
         custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> String {
+        // Helper to get field with multiple possible names (supports both camelCase and snake_case)
+        let get_field = |fields: &std::collections::HashMap<String, serde_json::Value>,
+                         names: &[&str]|
+         -> Option<f64> {
+            for name in names {
+                if let Some(v) = fields.get(*name).and_then(|v| v.as_f64()) {
+                    return Some(v);
+                }
+            }
+            None
+        };
+
         // Extract ALL values from custom_fields - NO CALCULATIONS
         // All these values should come pre-calculated from core-service
+        // Supports both InvoiceDetailsDto field names (PascalCase) and snake_case
         let (
             subtotal_gravado_18,
             subtotal_gravado_16,
@@ -254,42 +267,48 @@ impl FiscalInvoiceTemplate {
             total_itbis,
         ) = if let Some(fields) = custom_fields {
             (
-                fields
-                    .get("subtotal_gravado_18")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                fields
-                    .get("subtotal_gravado_16")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                fields
-                    .get("subtotal_exento")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                fields
-                    .get("itbis_18")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                fields
-                    .get("itbis_16")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                fields
-                    .get("propina_legal")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0),
-                fields
-                    .get("total_descuento")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(totals.discount_amount.unwrap_or(0.0)),
-                // Use pre-calculated totals, fallback to InvoiceTotals
-                fields
-                    .get("subtotal_gravado")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(totals.subtotal),
-                fields
-                    .get("total_itbis")
-                    .and_then(|v| v.as_f64())
+                // TaxableAmount1 = Subtotal Gravado 18%
+                get_field(
+                    fields,
+                    &["TaxableAmount1", "taxableAmount1", "subtotal_gravado_18"],
+                )
+                .unwrap_or(0.0),
+                // TaxableAmount2 = Subtotal Gravado 16%
+                get_field(
+                    fields,
+                    &["TaxableAmount2", "taxableAmount2", "subtotal_gravado_16"],
+                )
+                .unwrap_or(0.0),
+                // TaxableAmountExempt = Subtotal Exento
+                get_field(
+                    fields,
+                    &[
+                        "TaxableAmountExempt",
+                        "taxableAmountExempt",
+                        "subtotal_exento",
+                    ],
+                )
+                .unwrap_or(0.0),
+                // Itbis1Amount = ITBIS 18%
+                get_field(fields, &["Itbis1Amount", "itbis1Amount", "itbis_18"]).unwrap_or(0.0),
+                // Itbis2Amount = ITBIS 16%
+                get_field(fields, &["Itbis2Amount", "itbis2Amount", "itbis_16"]).unwrap_or(0.0),
+                // TipAmount = Propina Legal
+                get_field(fields, &["TipAmount", "tipAmount", "propina_legal"]).unwrap_or(0.0),
+                // DiscountAmount = Total Descuento
+                get_field(
+                    fields,
+                    &["DiscountAmount", "discountAmount", "total_descuento"],
+                )
+                .unwrap_or(totals.discount_amount.unwrap_or(0.0)),
+                // Subtotal Gravado combined (fallback to totals.subtotal)
+                get_field(
+                    fields,
+                    &["SubtotalGravado", "subtotalGravado", "subtotal_gravado"],
+                )
+                .unwrap_or(totals.subtotal),
+                // Total ITBIS combined (fallback to totals.tax_amount)
+                get_field(fields, &["TotalItbis", "totalItbis", "total_itbis"])
                     .unwrap_or(totals.tax_amount),
             )
         } else {
@@ -410,6 +429,47 @@ impl FiscalInvoiceTemplate {
         } else {
             "Factura Electrónica"
         }
+    }
+
+    /// Get payment condition type based on code from custom_fields
+    /// 05301 = Contado, 05302 = Crédito
+    fn get_payment_condition(
+        custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Option<&'static str> {
+        if let Some(fields) = custom_fields {
+            // Try multiple possible field names
+            let code = fields
+                .get("PaymentTypeCode")
+                .or_else(|| fields.get("paymentTypeCode"))
+                .or_else(|| fields.get("payment_type_code"))
+                .or_else(|| fields.get("ConditionCode"))
+                .or_else(|| fields.get("conditionCode"))
+                .and_then(|v| v.as_str().or_else(|| v.as_i64().map(|_| "")));
+
+            if let Some(code_str) = code {
+                // Check both string and extract last digits
+                if code_str.contains("01") || code_str.ends_with("01") {
+                    return Some("Factura Contado");
+                } else if code_str.contains("02") || code_str.ends_with("02") {
+                    return Some("Factura a Crédito");
+                }
+            }
+
+            // Also check for numeric values
+            if let Some(code_num) = fields
+                .get("PaymentTypeCode")
+                .or_else(|| fields.get("paymentTypeCode"))
+                .or_else(|| fields.get("payment_type_code"))
+                .and_then(|v| v.as_i64())
+            {
+                match code_num {
+                    5301 | 53001 => return Some("Factura Contado"),
+                    5302 | 53002 => return Some("Factura a Crédito"),
+                    _ => {}
+                }
+            }
+        }
+        None
     }
 
     fn generate_typst_content(&self, invoice: &InvoiceData) -> Result<String> {
@@ -614,24 +674,44 @@ impl FiscalInvoiceTemplate {
             address = utils::escape_typst(&company.address.to_string()),
             issue_date = invoice.issue_date,
             document_type = document_type,
-            encf_section = if let Some(fiscal) = &invoice.fiscal_info {
-                format!(
-                    r#"#text(size: 10pt, weight: "bold")[e-NCF:] #text(size: 10pt)[{}]
+            encf_section = {
+                // Get payment condition from custom_fields
+                let payment_condition = Self::get_payment_condition(&invoice.custom_fields);
+                let condition_line = payment_condition
+                    .map(|c| {
+                        format!(
+                            r#"#text(size: 9pt, weight: "bold")[{}]
+      #linebreak()"#,
+                            c
+                        )
+                    })
+                    .unwrap_or_default();
+
+                if let Some(fiscal) = &invoice.fiscal_info {
+                    format!(
+                        r#"{condition_line}#text(size: 10pt, weight: "bold")[e-NCF:] #text(size: 10pt)[{e_ncf}]
       #linebreak()
-      #text(size: 9pt, weight: "bold")[Fecha Vencimiento:] #text(size: 9pt)[{}]"#,
-                    fiscal.e_ncf,
-                    fiscal
-                        .expiration_date
-                        .as_deref()
-                        .unwrap_or(&invoice.due_date)
-                )
-            } else {
-                format!(
-                    r#"#text(size: 10pt, weight: "bold")[No. {}]
+      #text(size: 9pt, weight: "bold")[No. Factura:] #text(size: 9pt)[{invoice_number}]
       #linebreak()
-      #text(size: 9pt)[Vence: {}]"#,
-                    invoice.invoice_number, invoice.due_date
-                )
+      #text(size: 9pt, weight: "bold")[Fecha Vencimiento:] #text(size: 9pt)[{due_date}]"#,
+                        condition_line = condition_line,
+                        e_ncf = fiscal.e_ncf,
+                        invoice_number = invoice.invoice_number,
+                        due_date = fiscal
+                            .expiration_date
+                            .as_deref()
+                            .unwrap_or(&invoice.due_date)
+                    )
+                } else {
+                    format!(
+                        r#"{condition_line}#text(size: 10pt, weight: "bold")[No. Factura:] #text(size: 10pt)[{invoice_number}]
+      #linebreak()
+      #text(size: 9pt, weight: "bold")[Vence:] #text(size: 9pt)[{due_date}]"#,
+                        condition_line = condition_line,
+                        invoice_number = invoice.invoice_number,
+                        due_date = invoice.due_date
+                    )
+                }
             },
             client_name = utils::escape_typst(&client.name),
             client_tax_id = client_tax_id,
