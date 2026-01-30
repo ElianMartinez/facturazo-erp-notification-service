@@ -32,22 +32,40 @@ impl TypstGenerator {
 
     /// Find the fonts directory
     fn find_font_dir(work_dir: &Path) -> Option<PathBuf> {
-        // Check common locations
-        let candidates = [
+        // Priority 1: Check environment variable PDF_FONTS_DIR (used in Docker)
+        if let Ok(env_path) = std::env::var("PDF_FONTS_DIR") {
+            let path = PathBuf::from(&env_path);
+            if path.exists() && path.is_dir() {
+                tracing::info!("Using fonts directory from PDF_FONTS_DIR: {:?}", path);
+                return Some(path);
+            }
+        }
+
+        // Priority 2: Check common locations relative to work_dir
+        let mut candidates = vec![
             work_dir.join("fonts"),
             work_dir
                 .parent()
                 .map(|p| p.join("fonts"))
                 .unwrap_or_default(),
+            PathBuf::from("/app/fonts"), // Docker container path
             PathBuf::from("fonts"),
             PathBuf::from("./fonts"),
         ];
 
+        // Also check current working directory
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(cwd.join("fonts"));
+        }
+
         for candidate in candidates {
             if candidate.exists() && candidate.is_dir() {
+                tracing::info!("Found fonts directory at: {:?}", candidate);
                 return Some(candidate);
             }
         }
+
+        tracing::warn!("No fonts directory found");
         None
     }
 

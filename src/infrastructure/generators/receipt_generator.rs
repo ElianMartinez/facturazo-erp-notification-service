@@ -31,6 +31,15 @@ impl ReceiptGenerator {
 
     /// Find the fonts directory
     fn find_font_dir(work_dir: &Path) -> Option<PathBuf> {
+        // Priority 1: Check environment variable PDF_FONTS_DIR (used in Docker)
+        if let Ok(env_path) = std::env::var("PDF_FONTS_DIR") {
+            let path = PathBuf::from(&env_path);
+            if path.exists() && path.is_dir() {
+                tracing::info!("Using fonts directory from PDF_FONTS_DIR: {:?}", path);
+                return Some(path);
+            }
+        }
+
         // Get current working directory
         let cwd = std::env::current_dir().ok();
 
@@ -40,6 +49,7 @@ impl ReceiptGenerator {
                 .parent()
                 .map(|p| p.join("fonts"))
                 .unwrap_or_default(),
+            PathBuf::from("/app/fonts"), // Docker container path
             PathBuf::from("fonts"),
             PathBuf::from("./fonts"),
         ];
@@ -47,11 +57,6 @@ impl ReceiptGenerator {
         // Add cwd-based candidates
         if let Some(ref cwd) = cwd {
             candidates.push(cwd.join("fonts"));
-        }
-
-        // Add environment variable
-        if let Ok(font_path) = std::env::var("FONT_DIR") {
-            candidates.insert(0, PathBuf::from(font_path));
         }
 
         for candidate in &candidates {
