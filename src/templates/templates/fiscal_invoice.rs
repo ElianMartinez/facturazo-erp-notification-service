@@ -431,35 +431,33 @@ impl FiscalInvoiceTemplate {
         }
     }
 
-    /// Get payment condition type based on code from custom_fields
+    /// Get payment condition type based on operation_type_code from custom_fields
     /// 05301 = Contado, 05302 = Crédito
     fn get_payment_condition(
         custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> Option<&'static str> {
         if let Some(fields) = custom_fields {
-            // Try multiple possible field names
+            // operation_type_code is the correct field from core-service
             let code = fields
-                .get("PaymentTypeCode")
-                .or_else(|| fields.get("paymentTypeCode"))
-                .or_else(|| fields.get("payment_type_code"))
-                .or_else(|| fields.get("ConditionCode"))
-                .or_else(|| fields.get("conditionCode"))
-                .and_then(|v| v.as_str().or_else(|| v.as_i64().map(|_| "")));
+                .get("OperationTypeCode")
+                .or_else(|| fields.get("operationTypeCode"))
+                .or_else(|| fields.get("operation_type_code"))
+                .and_then(|v| v.as_str());
 
             if let Some(code_str) = code {
-                // Check both string and extract last digits
-                if code_str.contains("01") || code_str.ends_with("01") {
+                // Check the code pattern: 05301 = Contado, 05302 = Crédito
+                if code_str.ends_with("01") || code_str == "05301" {
                     return Some("Factura Contado");
-                } else if code_str.contains("02") || code_str.ends_with("02") {
+                } else if code_str.ends_with("02") || code_str == "05302" {
                     return Some("Factura a Crédito");
                 }
             }
 
             // Also check for numeric values
             if let Some(code_num) = fields
-                .get("PaymentTypeCode")
-                .or_else(|| fields.get("paymentTypeCode"))
-                .or_else(|| fields.get("payment_type_code"))
+                .get("OperationTypeCode")
+                .or_else(|| fields.get("operationTypeCode"))
+                .or_else(|| fields.get("operation_type_code"))
                 .and_then(|v| v.as_i64())
             {
                 match code_num {
@@ -470,6 +468,26 @@ impl FiscalInvoiceTemplate {
             }
         }
         None
+    }
+
+    /// Get operation sequence (invoice number) from custom_fields
+    fn get_operation_sequence(
+        custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Option<String> {
+        if let Some(fields) = custom_fields {
+            // operation_sequence is the correct field from core-service
+            fields
+                .get("OperationSequence")
+                .or_else(|| fields.get("operationSequence"))
+                .or_else(|| fields.get("operation_sequence"))
+                .and_then(|v| {
+                    v.as_str()
+                        .map(|s| s.to_string())
+                        .or_else(|| v.as_i64().map(|n| n.to_string()))
+                })
+        } else {
+            None
+        }
     }
 
     fn generate_typst_content(&self, invoice: &InvoiceData) -> Result<String> {
@@ -675,8 +693,10 @@ impl FiscalInvoiceTemplate {
             issue_date = invoice.issue_date,
             document_type = document_type,
             encf_section = {
-                // Get payment condition from custom_fields
+                // Get payment condition and operation sequence from custom_fields
                 let payment_condition = Self::get_payment_condition(&invoice.custom_fields);
+                let operation_sequence = Self::get_operation_sequence(&invoice.custom_fields);
+
                 let condition_line = payment_condition
                     .map(|c| {
                         format!(
@@ -687,6 +707,10 @@ impl FiscalInvoiceTemplate {
                     })
                     .unwrap_or_default();
 
+                // Use operation_sequence from core-service, fallback to invoice_number
+                let invoice_number_display =
+                    operation_sequence.unwrap_or_else(|| invoice.invoice_number.clone());
+
                 if let Some(fiscal) = &invoice.fiscal_info {
                     format!(
                         r#"{condition_line}#text(size: 10pt, weight: "bold")[e-NCF:] #text(size: 10pt)[{e_ncf}]
@@ -696,7 +720,7 @@ impl FiscalInvoiceTemplate {
       #text(size: 9pt, weight: "bold")[Fecha Vencimiento:] #text(size: 9pt)[{due_date}]"#,
                         condition_line = condition_line,
                         e_ncf = fiscal.e_ncf,
-                        invoice_number = invoice.invoice_number,
+                        invoice_number = invoice_number_display,
                         due_date = fiscal
                             .expiration_date
                             .as_deref()
@@ -708,7 +732,7 @@ impl FiscalInvoiceTemplate {
       #linebreak()
       #text(size: 9pt, weight: "bold")[Vence:] #text(size: 9pt)[{due_date}]"#,
                         condition_line = condition_line,
-                        invoice_number = invoice.invoice_number,
+                        invoice_number = invoice_number_display,
                         due_date = invoice.due_date
                     )
                 }

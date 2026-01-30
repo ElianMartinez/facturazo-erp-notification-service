@@ -147,24 +147,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
 
         // DGII-specific fields for detailed breakdown
-        // Mapped from InvoiceDetailsDto fields
+        // Mapped from InvoiceDetailsDto fields in core-service
         "custom_fields": {
-            // Payment condition: 05301 = Contado, 05302 = Crédito
-            "PaymentTypeCode": "05302",  // Factura a Crédito
+            // Operation info from core-service
+            "OperationSequence": 12345,              // No. Factura (from operation_sequence)
+            "OperationTypeCode": "05302",            // 05301 = Contado, 05302 = Crédito
             // Subtotals by tax rate
-            "subtotal_gravado_18": taxable_amount_1,  // TaxableAmount1
-            "subtotal_gravado_16": taxable_amount_2,  // TaxableAmount2
-            "subtotal_exento": taxable_amount_exempt, // TaxableAmountExempt
+            "TaxableAmount1": taxable_amount_1,      // Subtotal Gravado 18%
+            "TaxableAmount2": taxable_amount_2,      // Subtotal Gravado 16%
+            "TaxableAmountExempt": taxable_amount_exempt, // Subtotal Exento
             // Pre-calculated combined totals
-            "subtotal_gravado": taxable_amount_1 + taxable_amount_2,
+            "SubtotalGravado": taxable_amount_1 + taxable_amount_2,
             // ITBIS by rate
-            "itbis_18": itbis_1_amount,              // Itbis1Amount
-            "itbis_16": itbis_2_amount,              // Itbis2Amount
-            "total_itbis": itbis_1_amount + itbis_2_amount,
+            "Itbis1Amount": itbis_1_amount,          // ITBIS 18%
+            "Itbis2Amount": itbis_2_amount,          // ITBIS 16%
+            "TotalItbis": itbis_1_amount + itbis_2_amount,
             // Other amounts
-            "propina_legal": tip_amount,             // TipAmount
-            "total_descuento": discount_amount,      // DiscountAmount
-            "otros_impuestos": other_taxes_amount    // OtherTaxesAmount
+            "TipAmount": tip_amount,                 // Propina Legal
+            "DiscountAmount": discount_amount,       // Descuento
+            "OtherTaxesAmount": other_taxes_amount   // Otros Impuestos
         },
 
         // Fiscal info (from ElectronicInvoiceDetails)
