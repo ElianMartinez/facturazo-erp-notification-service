@@ -77,6 +77,29 @@ impl FiscalInvoiceTemplate {
         format!("rgb({}, {}, {})", r, g, b)
     }
 
+    /// Format a number as currency with thousand separators
+    /// Example: 8421512.50 -> "8,421,512.50"
+    fn format_currency(amount: f64) -> String {
+        let formatted = format!("{:.2}", amount);
+        let parts: Vec<&str> = formatted.split('.').collect();
+        let integer_part = parts[0];
+        let decimal_part = parts.get(1).unwrap_or(&"00");
+
+        // Add thousand separators
+        let chars: Vec<char> = integer_part.chars().collect();
+        let mut result = String::new();
+        let len = chars.len();
+
+        for (i, c) in chars.iter().enumerate() {
+            if i > 0 && (len - i) % 3 == 0 {
+                result.push(',');
+            }
+            result.push(*c);
+        }
+
+        format!("{}.{}", result, decimal_part)
+    }
+
     /// Check if items have document_date or notes (for conduce invoices)
     fn has_extended_columns(items: &[InvoiceItem]) -> bool {
         items
@@ -98,13 +121,13 @@ impl FiscalInvoiceTemplate {
                 };
 
                 format!(
-                    "  [{:.2}], [{}], [{}], [{:.2}], [{:.2}], [{:.2}]",
+                    "  [{:.2}], [{}], [{}], [{}], [{}], [{}]",
                     item.quantity,
                     utils::escape_typst(&item.description),
                     item.unit.as_deref().unwrap_or("UND"),
-                    item.unit_price,
-                    itbis_amount,
-                    item.get_total()
+                    Self::format_currency(item.unit_price),
+                    Self::format_currency(itbis_amount),
+                    Self::format_currency(item.get_total())
                 )
             })
             .collect::<Vec<_>>()
@@ -128,15 +151,15 @@ impl FiscalInvoiceTemplate {
                 let notes_str = item.notes.as_deref().unwrap_or("");
 
                 format!(
-                    "  [{}], [{:.2}], [{}], [{}], [{}], [{:.2}], [{:.2}], [{:.2}]",
+                    "  [{}], [{:.2}], [{}], [{}], [{}], [{}], [{}], [{}]",
                     date_str,
                     item.quantity,
                     utils::escape_typst(&item.description),
                     utils::escape_typst(notes_str),
                     item.unit.as_deref().unwrap_or("UND"),
-                    item.unit_price,
-                    itbis_amount,
-                    item.get_total()
+                    Self::format_currency(item.unit_price),
+                    Self::format_currency(itbis_amount),
+                    Self::format_currency(item.get_total())
                 )
             })
             .collect::<Vec<_>>()
@@ -215,31 +238,28 @@ impl FiscalInvoiceTemplate {
         totals: &InvoiceTotals,
         custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
     ) -> String {
-        // Extract custom fields for detailed DGII breakdown
+        // Extract custom fields for detailed DGII breakdown if available
+        // Otherwise, fall back to totals from InvoiceTotals
         let (subtotal_gravado_18, subtotal_gravado_16, subtotal_exento, itbis_18, itbis_16) =
             if let Some(fields) = custom_fields {
-                (
-                    fields
-                        .get("subtotal_gravado_18")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0),
-                    fields
-                        .get("subtotal_gravado_16")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0),
-                    fields
-                        .get("subtotal_exento")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0),
-                    fields
-                        .get("itbis_18")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0),
-                    fields
-                        .get("itbis_16")
-                        .and_then(|v| v.as_f64())
-                        .unwrap_or(0.0),
-                )
+                let sg18 = fields.get("subtotal_gravado_18").and_then(|v| v.as_f64());
+                let sg16 = fields.get("subtotal_gravado_16").and_then(|v| v.as_f64());
+                let se = fields.get("subtotal_exento").and_then(|v| v.as_f64());
+                let i18 = fields.get("itbis_18").and_then(|v| v.as_f64());
+                let i16 = fields.get("itbis_16").and_then(|v| v.as_f64());
+
+                // If no DGII-specific fields provided, use the calculated totals
+                if sg18.is_none() && sg16.is_none() && i18.is_none() && i16.is_none() {
+                    (totals.subtotal, 0.0, 0.0, totals.tax_amount, 0.0)
+                } else {
+                    (
+                        sg18.unwrap_or(0.0),
+                        sg16.unwrap_or(0.0),
+                        se.unwrap_or(0.0),
+                        i18.unwrap_or(0.0),
+                        i16.unwrap_or(0.0),
+                    )
+                }
             } else {
                 (totals.subtotal, 0.0, 0.0, totals.tax_amount, 0.0)
             };
@@ -250,8 +270,8 @@ impl FiscalInvoiceTemplate {
         // Build exempt line if applicable
         let exempt_line = if subtotal_exento > 0.0 {
             format!(
-                r#"[#text(size: 9pt)[Subtotal Exento:]], [#text(size: 9pt)[{:.2}]],"#,
-                subtotal_exento
+                r#"[#text(size: 9pt)[Subtotal Exento:]], [#text(size: 9pt)[{}]],"#,
+                Self::format_currency(subtotal_exento)
             )
         } else {
             String::new()
@@ -266,14 +286,17 @@ impl FiscalInvoiceTemplate {
       stroke: 0.5pt + rgb(100, 100, 100),
       inset: 6pt,
       align: (left, right),
-      [#text(size: 9pt, weight: "bold")[Subtotal Gravado:]], [#text(size: 9pt)[{:.2}]],
+      [#text(size: 9pt, weight: "bold")[Subtotal Gravado:]], [#text(size: 9pt)[{}]],
       {}
-      [#text(size: 9pt, weight: "bold")[Total ITBIS:]], [#text(size: 9pt)[{:.2}]],
-      [#text(size: 9pt, weight: "bold")[Total:]], [#text(size: 9pt, weight: "bold")[{:.2}]]
+      [#text(size: 9pt, weight: "bold")[Total ITBIS:]], [#text(size: 9pt)[{}]],
+      [#text(size: 9pt, weight: "bold")[Total:]], [#text(size: 9pt, weight: "bold")[{}]]
     )
   ]
 ]"#,
-            total_subtotal_gravado, exempt_line, total_itbis, totals.total
+            Self::format_currency(total_subtotal_gravado),
+            exempt_line,
+            Self::format_currency(total_itbis),
+            Self::format_currency(totals.total)
         )
     }
 
