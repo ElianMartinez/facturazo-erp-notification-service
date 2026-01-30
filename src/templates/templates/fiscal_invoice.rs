@@ -338,7 +338,7 @@ impl FiscalInvoiceTemplate {
         // Discount if applicable (shown in red)
         if total_descuento > 0.0 {
             rows.push(format!(
-                r#"[#text(size: 9pt)[Descuento:]], [#text(size: 9pt, fill: rgb(220, 53, 69))[- {}]]"#,
+                r#"[#text(size: 9pt)[Descuento:]], [#text(size: 9pt, fill: rgb(220, 53, 69))[\- {}]]"#,
                 Self::format_currency(total_descuento)
             ));
         }
