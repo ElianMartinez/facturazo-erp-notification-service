@@ -431,63 +431,39 @@ impl FiscalInvoiceTemplate {
         }
     }
 
-    /// Get payment condition type based on operation_type_code from custom_fields
-    /// 05301 = Contado, 05302 = Crédito
-    fn get_payment_condition(
+    /// Get invoice type from custom_fields
+    /// Core-service now sends "invoice_type" directly as readable text
+    /// Fallback to calculating from operation_type_code if not present
+    fn get_invoice_type(
         custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
-    ) -> Option<&'static str> {
+    ) -> Option<String> {
         if let Some(fields) = custom_fields {
-            // operation_type_code is the correct field from core-service
+            // Priority 1: Use invoice_type directly (already readable text from core-service)
+            if let Some(invoice_type) = fields
+                .get("invoice_type")
+                .or_else(|| fields.get("invoiceType"))
+                .or_else(|| fields.get("InvoiceType"))
+                .and_then(|v| v.as_str())
+            {
+                return Some(invoice_type.to_string());
+            }
+
+            // Priority 2: Calculate from operation_type_code (legacy fallback)
             let code = fields
-                .get("OperationTypeCode")
+                .get("operation_type_code")
                 .or_else(|| fields.get("operationTypeCode"))
-                .or_else(|| fields.get("operation_type_code"))
+                .or_else(|| fields.get("OperationTypeCode"))
                 .and_then(|v| v.as_str());
 
             if let Some(code_str) = code {
-                // Check the code pattern: 05301 = Contado, 05302 = Crédito
                 if code_str.ends_with("01") || code_str == "05301" {
-                    return Some("Factura Contado");
+                    return Some("Factura de Contado".to_string());
                 } else if code_str.ends_with("02") || code_str == "05302" {
-                    return Some("Factura a Crédito");
-                }
-            }
-
-            // Also check for numeric values
-            if let Some(code_num) = fields
-                .get("OperationTypeCode")
-                .or_else(|| fields.get("operationTypeCode"))
-                .or_else(|| fields.get("operation_type_code"))
-                .and_then(|v| v.as_i64())
-            {
-                match code_num {
-                    5301 | 53001 => return Some("Factura Contado"),
-                    5302 | 53002 => return Some("Factura a Crédito"),
-                    _ => {}
+                    return Some("Factura a Crédito".to_string());
                 }
             }
         }
         None
-    }
-
-    /// Get operation sequence (invoice number) from custom_fields
-    fn get_operation_sequence(
-        custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
-    ) -> Option<String> {
-        if let Some(fields) = custom_fields {
-            // operation_sequence is the correct field from core-service
-            fields
-                .get("OperationSequence")
-                .or_else(|| fields.get("operationSequence"))
-                .or_else(|| fields.get("operation_sequence"))
-                .and_then(|v| {
-                    v.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| v.as_i64().map(|n| n.to_string()))
-                })
-        } else {
-            None
-        }
     }
 
     fn generate_typst_content(&self, invoice: &InvoiceData) -> Result<String> {
@@ -693,34 +669,30 @@ impl FiscalInvoiceTemplate {
             issue_date = invoice.issue_date,
             document_type = document_type,
             encf_section = {
-                // Get payment condition and operation sequence from custom_fields
-                let payment_condition = Self::get_payment_condition(&invoice.custom_fields);
-                let operation_sequence = Self::get_operation_sequence(&invoice.custom_fields);
+                // Get invoice type from custom_fields (core-service sends it directly)
+                let invoice_type = Self::get_invoice_type(&invoice.custom_fields);
 
-                let condition_line = payment_condition
-                    .map(|c| {
+                let invoice_type_line = invoice_type
+                    .map(|t| {
                         format!(
                             r#"#text(size: 9pt, weight: "bold")[{}]
       #linebreak()"#,
-                            c
+                            t
                         )
                     })
                     .unwrap_or_default();
 
-                // Use operation_sequence from core-service, fallback to invoice_number
-                let invoice_number_display =
-                    operation_sequence.unwrap_or_else(|| invoice.invoice_number.clone());
-
+                // invoice_number now contains OperationSequence directly from core-service
                 if let Some(fiscal) = &invoice.fiscal_info {
                     format!(
-                        r#"{condition_line}#text(size: 10pt, weight: "bold")[e-NCF:] #text(size: 10pt)[{e_ncf}]
+                        r#"{invoice_type_line}#text(size: 10pt, weight: "bold")[e-NCF:] #text(size: 10pt)[{e_ncf}]
       #linebreak()
       #text(size: 9pt, weight: "bold")[No. Factura:] #text(size: 9pt)[{invoice_number}]
       #linebreak()
       #text(size: 9pt, weight: "bold")[Fecha Vencimiento:] #text(size: 9pt)[{due_date}]"#,
-                        condition_line = condition_line,
+                        invoice_type_line = invoice_type_line,
                         e_ncf = fiscal.e_ncf,
-                        invoice_number = invoice_number_display,
+                        invoice_number = invoice.invoice_number,
                         due_date = fiscal
                             .expiration_date
                             .as_deref()
@@ -728,11 +700,11 @@ impl FiscalInvoiceTemplate {
                     )
                 } else {
                     format!(
-                        r#"{condition_line}#text(size: 10pt, weight: "bold")[No. Factura:] #text(size: 10pt)[{invoice_number}]
+                        r#"{invoice_type_line}#text(size: 10pt, weight: "bold")[No. Factura:] #text(size: 10pt)[{invoice_number}]
       #linebreak()
       #text(size: 9pt, weight: "bold")[Vence:] #text(size: 9pt)[{due_date}]"#,
-                        condition_line = condition_line,
-                        invoice_number = invoice_number_display,
+                        invoice_type_line = invoice_type_line,
+                        invoice_number = invoice.invoice_number,
                         due_date = invoice.due_date
                     )
                 }

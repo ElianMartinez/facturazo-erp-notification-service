@@ -100,7 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // INVOICE DATA - Matching InvoiceDetailsDto structure
     // ============================================================
     let invoice_data = json!({
-        "invoice_number": "FAC-2026-0500",
+        // invoice_number now contains OperationSequence directly from core-service
+        "invoice_number": "534",
         "issue_date": "2026-01-30",
         "due_date": "2026-02-28",
         "currency": "DOP",
@@ -149,9 +150,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // DGII-specific fields for detailed breakdown
         // Mapped from InvoiceDetailsDto fields in core-service
         "custom_fields": {
-            // Operation info from core-service
-            "OperationSequence": 12345,              // No. Factura (from operation_sequence)
-            "OperationTypeCode": "05302",            // 05301 = Contado, 05302 = Crédito
+            // Invoice type (sent directly from core-service as readable text)
+            "invoice_type": "Factura a Crédito",     // "Factura de Contado" or "Factura a Crédito"
+            "operation_type_code": "05302",          // 05301 = Contado, 05302 = Crédito (for legacy)
             // Subtotals by tax rate
             "TaxableAmount1": taxable_amount_1,      // Subtotal Gravado 18%
             "TaxableAmount2": taxable_amount_2,      // Subtotal Gravado 16%
