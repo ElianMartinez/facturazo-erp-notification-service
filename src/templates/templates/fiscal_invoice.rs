@@ -17,7 +17,7 @@ pub struct FiscalInvoiceTemplate;
 
 /// Default color matching DGII examples (green tones)
 const DEFAULT_PRIMARY_COLOR: &str = "rgb(0, 128, 102)"; // Verde DGII
-const DEFAULT_FONT: &str = "Helvetica Neue";
+const DEFAULT_FONT: &str = "Roboto";
 
 impl FiscalInvoiceTemplate {
     pub fn new() -> Self {

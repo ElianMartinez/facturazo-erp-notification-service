@@ -94,10 +94,23 @@ impl TypstGenerator {
 
         // Add font directory if available
         if let Some(ref font_dir) = self.font_dir {
+            tracing::debug!("Adding font-path to typst command: {:?}", font_dir);
             cmd.arg("--font-path").arg(font_dir);
+        } else {
+            tracing::warn!("No font directory configured for typst compilation!");
         }
 
         cmd.arg(&typst_file).arg(&pdf_file);
+
+        tracing::debug!(
+            "Executing typst command: typst compile {} {} {}",
+            self.font_dir
+                .as_ref()
+                .map(|f| format!("--font-path {:?}", f))
+                .unwrap_or_default(),
+            typst_file.display(),
+            pdf_file.display()
+        );
 
         let output = cmd.output().await?;
 

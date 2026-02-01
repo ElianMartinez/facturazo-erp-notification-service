@@ -10,13 +10,59 @@ use std::sync::Arc;
 pub struct TemplateEngine {
     output_dir: String,
     registry: Arc<TemplateRegistry>,
+    font_dir: Option<String>,
+}
+
+impl TemplateEngine {
+    /// Find the fonts directory from environment or common locations
+    fn find_font_dir() -> Option<String> {
+        // Priority 1: Check environment variable PDF_FONTS_DIR (used in Docker)
+        if let Ok(env_path) = std::env::var("PDF_FONTS_DIR") {
+            let path = std::path::Path::new(&env_path);
+            if path.exists() && path.is_dir() {
+                tracing::info!("Using fonts directory from PDF_FONTS_DIR: {}", env_path);
+                return Some(env_path);
+            }
+        }
+
+        // Priority 2: Check common locations
+        let candidates = vec![
+            "/app/fonts", // Docker container path
+            "fonts",      // Local relative path
+            "./fonts",    // Explicit local path
+        ];
+
+        for candidate in candidates {
+            let path = std::path::Path::new(candidate);
+            if path.exists() && path.is_dir() {
+                tracing::info!("Found fonts directory at: {}", candidate);
+                return Some(candidate.to_string());
+            }
+        }
+
+        // Also check current working directory
+        if let Ok(cwd) = std::env::current_dir() {
+            let fonts_path = cwd.join("fonts");
+            if fonts_path.exists() && fonts_path.is_dir() {
+                if let Some(path_str) = fonts_path.to_str() {
+                    tracing::info!("Found fonts directory at: {}", path_str);
+                    return Some(path_str.to_string());
+                }
+            }
+        }
+
+        tracing::warn!("No fonts directory found - PDFs may use fallback fonts");
+        None
+    }
 }
 
 impl TemplateEngine {
     pub fn new(_templates_dir: String, output_dir: String) -> Self {
+        let font_dir = Self::find_font_dir();
         Self {
             output_dir,
             registry: Arc::new(TemplateRegistry::new()),
+            font_dir,
         }
     }
 
@@ -68,9 +114,17 @@ impl TemplateEngine {
         fs::write(&typ_path, &typst_content)?;
 
         // Compilar Typst a PDF
-        let output = Command::new("typst")
-            .args(&["compile", &typ_path, &pdf_path])
-            .output()?;
+        let mut cmd = Command::new("typst");
+        cmd.arg("compile");
+
+        // Add font directory if available
+        if let Some(ref font_dir) = self.font_dir {
+            tracing::debug!("Adding font-path to typst command: {}", font_dir);
+            cmd.arg("--font-path").arg(font_dir);
+        }
+
+        cmd.arg(&typ_path).arg(&pdf_path);
+        let output = cmd.output()?;
 
         // Limpiar archivo temporal
         fs::remove_file(&typ_path).ok();
@@ -140,9 +194,17 @@ impl TemplateEngine {
         fs::write(&typ_path, &typst_content)?;
 
         // Compilar Typst a PDF
-        let output = Command::new("typst")
-            .args(&["compile", &typ_path, &pdf_path])
-            .output()?;
+        let mut cmd = Command::new("typst");
+        cmd.arg("compile");
+
+        // Add font directory if available
+        if let Some(ref font_dir) = self.font_dir {
+            tracing::debug!("Adding font-path to typst command: {}", font_dir);
+            cmd.arg("--font-path").arg(font_dir);
+        }
+
+        cmd.arg(&typ_path).arg(&pdf_path);
+        let output = cmd.output()?;
 
         // Limpiar archivo temporal
         fs::remove_file(&typ_path).ok();
