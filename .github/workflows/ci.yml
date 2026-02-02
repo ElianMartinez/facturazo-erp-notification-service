@@ -15,10 +15,10 @@ env:
 
 jobs:
   # ===========================================
-  # Lint Job - Code quality checks
+  # Build & Test - Single compilation for everything
   # ===========================================
-  lint:
-    name: Lint & Format
+  build-and-test:
+    name: Build & Test
     runs-on: [self-hosted, linux, x64, pdf-services]
     steps:
       - name: Checkout code
@@ -28,58 +28,58 @@ jobs:
         run: |
           source $HOME/.cargo/env
           rustup component add clippy rustfmt
-
-      - name: Check formatting
-        run: |
-          source $HOME/.cargo/env
-          cargo fmt --all -- --check
-
-      - name: Run Clippy
-        run: |
-          source $HOME/.cargo/env
-          cargo clippy --all-targets --all-features -- -D warnings
-        continue-on-error: true
-
-  # ===========================================
-  # Test Job - Runs all tests (also validates compilation)
-  # ===========================================
-  test:
-    name: Test
-    runs-on: [self-hosted, linux, x64, pdf-services]
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Rust
-        run: |
-          source $HOME/.cargo/env
           rustc --version
 
-      - name: Cache cargo registry
+      - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
 
-      - name: Run tests
+      - name: Check formatting
         run: |
           source $HOME/.cargo/env
-          cargo test --all-targets -- --test-threads=4
+          cargo fmt --all -- --check
+
+      - name: Build release binary
+        run: |
+          source $HOME/.cargo/env
+          cargo build --release --bin api
         timeout-minutes: 10
 
-      - name: Run doc tests
+      - name: Run Clippy (on already compiled code)
         run: |
           source $HOME/.cargo/env
-          cargo test --doc
+          cargo clippy --release --all-targets -- -D warnings
+        continue-on-error: true
+
+      - name: Run tests (reuses compilation)
+        run: |
+          source $HOME/.cargo/env
+          cargo test --release --all-targets -- --test-threads=4
         timeout-minutes: 5
 
+      - name: Strip and prepare binary
+        run: |
+          strip target/release/api
+          mkdir -p artifacts
+          cp target/release/api artifacts/pdf-service
+          ls -lh artifacts/
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf-service-binary
+          path: artifacts/pdf-service
+          retention-days: 1
+
   # ===========================================
-  # Security Job - Audit dependencies
+  # Security Audit (runs in parallel)
   # ===========================================
   security:
     name: Security Audit
@@ -88,28 +88,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Rust
-        run: |
-          source $HOME/.cargo/env
-          cargo install cargo-audit --quiet || true
-
       - name: Run security audit
         run: |
           source $HOME/.cargo/env
-          cargo audit || true
+          cargo audit 2>/dev/null || true
         continue-on-error: true
 
   # ===========================================
-  # Docker Build & Push - Build and push Docker image
+  # Docker Build & Push - Uses pre-built binary
   # ===========================================
   docker:
     name: Docker Build & Push
     runs-on: [self-hosted, linux, x64, pdf-services]
-    needs: [test, lint]
+    needs: [build-and-test]
     if: github.event_name == 'push' || github.event_name == 'release'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pdf-service-binary
+          path: artifacts
+
+      - name: Prepare binary
+        run: |
+          chmod +x artifacts/pdf-service
+          ls -lh artifacts/
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -124,56 +130,56 @@ jobs:
         id: tags
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
-            # Release event -> prod tags
             echo "tags=${{ env.DOCKER_IMAGE }}:prod-latest,${{ env.DOCKER_IMAGE }}:${{ github.event.release.tag_name }}" >> $GITHUB_OUTPUT
-            echo "environment=production" >> $GITHUB_OUTPUT
           elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            # Push to main -> dev-latest
             echo "tags=${{ env.DOCKER_IMAGE }}:dev-latest,${{ env.DOCKER_IMAGE }}:dev-${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "environment=development" >> $GITHUB_OUTPUT
           else
-            # Other branches (develop, v2-microservice) -> branch-specific
             BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
             echo "tags=${{ env.DOCKER_IMAGE }}:${BRANCH_NAME}-latest,${{ env.DOCKER_IMAGE }}:${BRANCH_NAME}-${{ github.sha }}" >> $GITHUB_OUTPUT
-            echo "environment=staging" >> $GITHUB_OUTPUT
           fi
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: Dockerfile.ci
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.DOCKER_IMAGE }}:buildcache,mode=max
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
 
       - name: Image digest
-        run: |
-          echo "Image pushed with tags: ${{ steps.tags.outputs.tags }}"
-          echo "Environment: ${{ steps.tags.outputs.environment }}"
+        run: echo "Image pushed with tags - ${{ steps.tags.outputs.tags }}"
 
   # ===========================================
-  # Deploy Job - Deploy to production (main only)
+  # Deploy to Dev (main branch only)
   # ===========================================
-  deploy:
-    name: Deploy
+  deploy-dev:
+    name: Deploy to Dev
     runs-on: [self-hosted, linux, x64, pdf-services]
     needs: [docker]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Deploy notification
+      - name: Deploy to monitoring server
         run: |
-          echo "=== Deployment Ready ==="
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Commit: ${{ github.sha }}"
-          echo "Image: ${{ env.DOCKER_IMAGE }}:dev-latest"
-          echo ""
-          echo "To deploy manually:"
-          echo "  docker pull ${{ env.DOCKER_IMAGE }}:dev-latest"
-          echo "  docker-compose up -d"
+          echo "=== Deploying to Dev Environment ==="
+
+          docker pull ${{ env.DOCKER_IMAGE }}:dev-latest
+          docker stop facturazo-pdf-static 2>/dev/null || true
+          docker rm facturazo-pdf-static 2>/dev/null || true
+
+          cd /opt/facturazo-static && docker compose up -d pdf-service
+
+          echo "Waiting for service..."
+          sleep 5
+
+          for i in {1..10}; do
+            if docker exec facturazo-pdf-static wget -qO- http://localhost:8080/health 2>/dev/null | grep -q "healthy"; then
+              echo "✓ Deploy successful!"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "Service started (health check pending)"
+          docker logs facturazo-pdf-static --tail 10

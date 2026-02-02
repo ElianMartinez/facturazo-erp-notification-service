@@ -1,0 +1,65 @@
+# ===========================================
+# Dockerfile.ci - Uses pre-built binary from CI
+# Much faster than compiling inside container
+# ===========================================
+FROM alpine:3.21
+
+# Install minimal runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    libssl3 \
+    librdkafka \
+    libsasl \
+    libgcc \
+    xz \
+    wget
+
+# Install Typst from GitHub releases
+ARG TYPST_VERSION=0.12.0
+ARG TARGETARCH
+RUN cd /tmp && \
+    if [ "$TARGETARCH" = "arm64" ]; then \
+    ARCH="aarch64"; \
+    else \
+    ARCH="x86_64"; \
+    fi && \
+    wget -q https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${ARCH}-unknown-linux-musl.tar.xz && \
+    tar -xf typst-${ARCH}-unknown-linux-musl.tar.xz && \
+    mv typst-${ARCH}-unknown-linux-musl/typst /usr/local/bin/ && \
+    rm -rf typst-* && \
+    typst --version
+
+WORKDIR /app
+
+# Copy pre-built binary from CI artifacts
+COPY artifacts/pdf-service /app/pdf-service
+RUN chmod +x /app/pdf-service
+
+# Copy custom fonts for PDF generation
+COPY fonts/ /app/fonts/
+
+# Create necessary directories
+RUN mkdir -p /app/work /app/storage /app/data
+
+# Create non-root user and set permissions
+RUN adduser -D -H -s /sbin/nologin appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# Default environment variables
+ENV RUST_LOG=info
+ENV HOST=0.0.0.0
+ENV PORT=8080
+ENV PDF_FONTS_DIR=/app/fonts
+
+# Kafka defaults
+ENV KAFKA_ENABLED=true
+ENV KAFKA_BROKERS=kafka:9092
+ENV KAFKA_GROUP_ID=pdf-service-worker
+ENV KAFKA_TOPICS=document-generate-request,notification-dispatch-request
+ENV KAFKA_RESPONSE_TOPIC=document-events
+
+EXPOSE 8080
+
+CMD ["./pdf-service"]
