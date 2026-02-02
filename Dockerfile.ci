@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Typst from GitHub releases
+# Install Typst from GitHub releases (musl binaries are static, work everywhere)
 ARG TYPST_VERSION=0.12.0
 ARG TARGETARCH
 RUN cd /tmp && \
@@ -23,9 +23,9 @@ RUN cd /tmp && \
     else \
     ARCH="x86_64"; \
     fi && \
-    wget -q https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${ARCH}-unknown-linux-gnu.tar.xz && \
-    tar -xf typst-${ARCH}-unknown-linux-gnu.tar.xz && \
-    mv typst-${ARCH}-unknown-linux-gnu/typst /usr/local/bin/ && \
+    wget -q https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${ARCH}-unknown-linux-musl.tar.xz && \
+    tar -xf typst-${ARCH}-unknown-linux-musl.tar.xz && \
+    mv typst-${ARCH}-unknown-linux-musl/typst /usr/local/bin/ && \
     rm -rf typst-* && \
     typst --version
 
