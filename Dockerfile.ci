@@ -1,18 +1,18 @@
 # ===========================================
 # Dockerfile.ci - Uses pre-built binary from CI
-# Much faster than compiling inside container
+# Uses Debian slim for glibc compatibility
 # ===========================================
-FROM alpine:3.21
+FROM debian:bookworm-slim
 
 # Install minimal runtime dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl3 \
-    librdkafka \
-    libsasl \
-    libgcc \
-    xz \
-    wget
+    librdkafka1 \
+    libsasl2-2 \
+    xz-utils \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Typst from GitHub releases
 ARG TYPST_VERSION=0.12.0
@@ -23,9 +23,9 @@ RUN cd /tmp && \
     else \
     ARCH="x86_64"; \
     fi && \
-    wget -q https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${ARCH}-unknown-linux-musl.tar.xz && \
-    tar -xf typst-${ARCH}-unknown-linux-musl.tar.xz && \
-    mv typst-${ARCH}-unknown-linux-musl/typst /usr/local/bin/ && \
+    wget -q https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-${ARCH}-unknown-linux-gnu.tar.xz && \
+    tar -xf typst-${ARCH}-unknown-linux-gnu.tar.xz && \
+    mv typst-${ARCH}-unknown-linux-gnu/typst /usr/local/bin/ && \
     rm -rf typst-* && \
     typst --version
 
@@ -42,7 +42,7 @@ COPY fonts/ /app/fonts/
 RUN mkdir -p /app/work /app/storage /app/data
 
 # Create non-root user and set permissions
-RUN adduser -D -H -s /sbin/nologin appuser && \
+RUN useradd -r -s /usr/sbin/nologin appuser && \
     chown -R appuser:appuser /app
 
 USER appuser
