@@ -2,7 +2,7 @@
 # Dockerfile.ci - Uses pre-built binary from CI
 # Uses Debian slim for glibc compatibility
 # ===========================================
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Install minimal runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
