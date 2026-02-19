@@ -404,7 +404,13 @@ async fn test_visual_codes_qr_generation() {
     let output_dir = Path::new("/tmp/typst-test");
     std::fs::create_dir_all(output_dir).unwrap();
 
-    let source = std::fs::read_to_string("/tmp/typst-test/factura_real_v3_rendered.typ").unwrap();
+    // Create a test template with a QR directive
+    let source = r#"= Test Invoice
+Some content here.
+{{qr value="https://dgii.gov.do/consulta?rnc=123456789" size="2.5cm"}}
+More content after QR.
+"#
+    .to_string();
     let processed = visual_codes::process_directives(&source, output_dir).unwrap();
 
     // Verify QR was generated
