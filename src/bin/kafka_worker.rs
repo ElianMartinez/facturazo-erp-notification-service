@@ -202,6 +202,53 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Initialize template resolver (if configured)
+    let template_resolver = if let (Ok(api_url), Ok(token)) = (
+        env::var("PDF_CORE_API_URL"),
+        env::var("PDF_CORE_SERVICE_TOKEN"),
+    ) {
+        use pdf_services::infrastructure::template_resolver::{
+            AssetManager, TemplateApiClient, TemplateResolver,
+        };
+        match TemplateApiClient::new(api_url.clone(), token) {
+            Ok(api_client) => {
+                let s3_client = Arc::new(
+                    pdf_services::storage::s3::S3Client::new()
+                        .await
+                        .expect("S3 client required for template resolver"),
+                );
+                let asset_dir = env::var("PDF_TEMPLATE_ASSET_DIR")
+                    .unwrap_or_else(|_| "./template-assets".to_string());
+                let bucket =
+                    env::var("S3_BUCKET_TEMPLATES").unwrap_or_else(|_| "templates".to_string());
+                let ttl: u64 = env::var("PDF_TEMPLATE_CACHE_TTL_SECS")
+                    .unwrap_or_else(|_| "300".to_string())
+                    .parse()
+                    .unwrap_or(300);
+                let resolver = Arc::new(TemplateResolver::new(
+                    Arc::new(api_client),
+                    Arc::new(AssetManager::new(
+                        s3_client,
+                        PathBuf::from(asset_dir),
+                        bucket,
+                    )),
+                    ttl,
+                ));
+                info!("Template resolver configured with backend: {}", api_url);
+                Some(resolver)
+            }
+            Err(e) => {
+                warn!("Failed to init template API client: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let typst_generator =
+        Arc::new(pdf_services::infrastructure::generators::TypstGenerator::new(work_dir.clone()));
+
     // Initialize orchestrators
     let document_orchestrator = Arc::new(DocumentOrchestrator::new(
         generator_factory.clone(),
@@ -209,6 +256,8 @@ async fn main() -> Result<()> {
         cache_service.clone(),
         email_service.clone(),
         whatsapp_service.clone(),
+        template_resolver.clone(),
+        typst_generator,
     ));
 
     let notification_orchestrator = Arc::new(NotificationOrchestrator::new(
@@ -221,6 +270,7 @@ async fn main() -> Result<()> {
     let handler = Arc::new(KafkaHandler::new(
         document_orchestrator,
         notification_orchestrator,
+        template_resolver,
     ));
 
     // Shutdown signal

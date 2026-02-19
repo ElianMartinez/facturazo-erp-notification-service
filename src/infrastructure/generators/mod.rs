@@ -16,6 +16,7 @@ pub mod quotation_generator;
 pub mod receipt_generator;
 pub mod report_generator;
 pub mod typst_generator;
+pub mod visual_codes;
 
 // Excel & CSV generators
 pub mod csv_generator;

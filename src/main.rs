@@ -340,6 +340,60 @@ async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<(
         }
     };
 
+    // Initialize template resolver for Kafka worker (if configured)
+    let kafka_template_resolver = if let (Ok(api_url), Ok(token)) = (
+        env::var("PDF_CORE_API_URL"),
+        env::var("PDF_CORE_SERVICE_TOKEN"),
+    ) {
+        use pdf_services::infrastructure::template_resolver::{
+            AssetManager, TemplateApiClient, TemplateResolver,
+        };
+
+        match TemplateApiClient::new(api_url.clone(), token) {
+            Ok(api_client) => {
+                // Reuse S3 client from API state if available, otherwise create minimal one
+                let s3_client = Arc::new(
+                    pdf_services::storage::s3::S3Client::new()
+                        .await
+                        .unwrap_or_else(|_| panic!("S3 client required for template resolver")),
+                );
+                let asset_dir = env::var("PDF_TEMPLATE_ASSET_DIR")
+                    .unwrap_or_else(|_| "./template-assets".to_string());
+                let bucket =
+                    env::var("S3_BUCKET_TEMPLATES").unwrap_or_else(|_| "templates".to_string());
+                let asset_manager = Arc::new(AssetManager::new(
+                    s3_client,
+                    PathBuf::from(asset_dir),
+                    bucket,
+                ));
+                let ttl: u64 = env::var("PDF_TEMPLATE_CACHE_TTL_SECS")
+                    .unwrap_or_else(|_| "300".to_string())
+                    .parse()
+                    .unwrap_or(300);
+                let resolver = Arc::new(TemplateResolver::new(
+                    Arc::new(api_client),
+                    asset_manager,
+                    ttl,
+                ));
+                info!(
+                    "Kafka worker: Template resolver configured with backend: {}",
+                    api_url
+                );
+                Some(resolver)
+            }
+            Err(e) => {
+                warn!("Kafka worker: Failed to init template API client: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // Initialize Typst generator for dynamic templates
+    let typst_generator =
+        Arc::new(pdf_services::infrastructure::generators::TypstGenerator::new(work_dir.clone()));
+
     // Initialize orchestrators
     let document_orchestrator = Arc::new(DocumentOrchestrator::new(
         generator_factory.clone(),
@@ -347,6 +401,8 @@ async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<(
         cache_service.clone(),
         email_service.clone(),
         whatsapp_service.clone(),
+        kafka_template_resolver.clone(),
+        typst_generator,
     ));
 
     let notification_orchestrator = Arc::new(NotificationOrchestrator::new(
@@ -359,6 +415,7 @@ async fn run_kafka_worker(shutdown_rx: &mut broadcast::Receiver<()>) -> Result<(
     let handler = Arc::new(KafkaHandler::new(
         document_orchestrator,
         notification_orchestrator,
+        kafka_template_resolver,
     ));
 
     info!("Kafka worker started - waiting for messages...");
@@ -568,6 +625,17 @@ fn load_config() -> Result<AppConfig> {
         green_api_media_url: env::var("GREEN_API_MEDIA_URL").ok(),
         green_api_instance_id: env::var("GREEN_API_INSTANCE_ID").ok(),
         green_api_token: env::var("GREEN_API_TOKEN").ok(),
+        // Template resolution
+        core_api_url: env::var("PDF_CORE_API_URL").ok(),
+        core_service_token: env::var("PDF_CORE_SERVICE_TOKEN").ok(),
+        template_cache_ttl_secs: env::var("PDF_TEMPLATE_CACHE_TTL_SECS")
+            .unwrap_or_else(|_| "300".to_string())
+            .parse()
+            .unwrap_or(300),
+        template_asset_dir: env::var("PDF_TEMPLATE_ASSET_DIR")
+            .unwrap_or_else(|_| "./template-assets".to_string()),
+        s3_bucket_templates: env::var("S3_BUCKET_TEMPLATES")
+            .unwrap_or_else(|_| "templates".to_string()),
     };
 
     Ok(config)

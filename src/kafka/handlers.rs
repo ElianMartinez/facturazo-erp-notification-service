@@ -28,6 +28,8 @@ pub enum KafkaMessage {
     BatchNotify(BatchNotifyRequest),
     /// Generate document and notify multiple recipients
     GenerateAndNotifyMany(GenerateAndNotifyManyRequest),
+    /// Invalidate a cached template (sent by .NET backend on template update)
+    InvalidateTemplate(InvalidateTemplateRequest),
 }
 
 /// Request to generate a document
@@ -137,20 +139,30 @@ pub struct NotificationTemplate {
     pub concurrency: Option<usize>,
 }
 
+/// Request to invalidate a cached template
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InvalidateTemplateRequest {
+    pub tenant_id: String,
+    pub document_type_code: String,
+}
+
 /// Kafka message handler
 pub struct KafkaHandler {
     document_orchestrator: Arc<DocumentOrchestrator>,
     notification_orchestrator: Arc<NotificationOrchestrator>,
+    template_resolver: Option<Arc<crate::infrastructure::template_resolver::TemplateResolver>>,
 }
 
 impl KafkaHandler {
     pub fn new(
         document_orchestrator: Arc<DocumentOrchestrator>,
         notification_orchestrator: Arc<NotificationOrchestrator>,
+        template_resolver: Option<Arc<crate::infrastructure::template_resolver::TemplateResolver>>,
     ) -> Self {
         Self {
             document_orchestrator,
             notification_orchestrator,
+            template_resolver,
         }
     }
 
@@ -166,6 +178,7 @@ impl KafkaHandler {
             KafkaMessage::GenerateAndNotifyMany(req) => {
                 self.handle_generate_and_notify_many(req).await
             }
+            KafkaMessage::InvalidateTemplate(req) => self.handle_invalidate_template(req).await,
         }
     }
 
@@ -474,6 +487,28 @@ impl KafkaHandler {
             notifications_failed,
         })
     }
+
+    async fn handle_invalidate_template(
+        &self,
+        req: InvalidateTemplateRequest,
+    ) -> Result<HandlerResponse> {
+        info!(
+            tenant_id = %req.tenant_id,
+            document_type_code = %req.document_type_code,
+            "Handling template cache invalidation"
+        );
+
+        if let Some(resolver) = &self.template_resolver {
+            if let Ok(tenant_id) = req.tenant_id.parse::<i64>() {
+                resolver.invalidate(tenant_id, &req.document_type_code);
+            }
+        }
+
+        Ok(HandlerResponse::TemplateInvalidated {
+            tenant_id: req.tenant_id,
+            document_type_code: req.document_type_code,
+        })
+    }
 }
 
 /// Handler response types
@@ -520,6 +555,11 @@ pub enum HandlerResponse {
         total_recipients: usize,
         notifications_sent: usize,
         notifications_failed: usize,
+    },
+    /// Response for template cache invalidation
+    TemplateInvalidated {
+        tenant_id: String,
+        document_type_code: String,
     },
 }
 

@@ -11,6 +11,7 @@ pub mod observability;
 pub mod persistence;
 pub mod resilience;
 pub mod storage;
+pub mod template_resolver;
 
 use anyhow::Result;
 use std::sync::Arc;

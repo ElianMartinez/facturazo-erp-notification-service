@@ -271,12 +271,18 @@ async fn test_document_orchestrator() {
         "".to_string(),
     ));
 
+    let typst_generator = Arc::new(
+        pdf_services::infrastructure::generators::TypstGenerator::new(temp_dir.path().join("work")),
+    );
+
     let orchestrator = DocumentOrchestrator::new(
         generator_factory,
         storage_service,
         cache_service.clone(),
         None,
         None,
+        None, // template_resolver
+        typst_generator,
     );
 
     // Data format expected by FiscalInvoiceTemplate (DGII-compliant)
@@ -388,4 +394,30 @@ fn test_document_format_extensions() {
     assert_eq!(DocumentFormat::Pdf.file_extension(), "pdf");
     assert_eq!(DocumentFormat::Excel.file_extension(), "xlsx");
     assert_eq!(DocumentFormat::Csv.file_extension(), "csv");
+}
+
+#[tokio::test]
+async fn test_visual_codes_qr_generation() {
+    use pdf_services::infrastructure::generators::visual_codes;
+    use std::path::Path;
+
+    let output_dir = Path::new("/tmp/typst-test");
+    std::fs::create_dir_all(output_dir).unwrap();
+
+    let source = std::fs::read_to_string("/tmp/typst-test/factura_real_v3_rendered.typ").unwrap();
+    let processed = visual_codes::process_directives(&source, output_dir).unwrap();
+
+    // Verify QR was generated
+    assert!(
+        processed.contains("#image(\"qr_"),
+        "Should contain #image for QR"
+    );
+    assert!(
+        !processed.contains("{{qr"),
+        "Should not contain QR directive anymore"
+    );
+
+    // Write processed output
+    std::fs::write("/tmp/typst-test/factura_final.typ", &processed).unwrap();
+    println!("Processed template written to /tmp/typst-test/factura_final.typ");
 }

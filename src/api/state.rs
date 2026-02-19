@@ -10,6 +10,7 @@ use crate::infrastructure::notifications::{
 };
 use crate::infrastructure::resilience::{ConcurrencyConfig, ConcurrencyController};
 use crate::infrastructure::storage::StorageService;
+use crate::infrastructure::template_resolver::{AssetManager, TemplateApiClient, TemplateResolver};
 use crate::storage::s3::S3Client;
 use crate::templates::TemplateManager;
 
@@ -29,6 +30,8 @@ pub struct ApiState {
     pub storage_service: Arc<StorageService>,
     /// Concurrency controller for resource-aware job scheduling
     pub concurrency_controller: Arc<ConcurrencyController>,
+    /// Template resolver for dynamic templates from .NET backend (None if not configured)
+    pub template_resolver: Option<Arc<TemplateResolver>>,
 }
 
 /// WhatsApp provider selection
@@ -67,6 +70,12 @@ pub struct AppConfig {
     pub green_api_media_url: Option<String>,
     pub green_api_instance_id: Option<String>,
     pub green_api_token: Option<String>,
+    // Template resolution (optional - if not set, uses built-in templates only)
+    pub core_api_url: Option<String>,
+    pub core_service_token: Option<String>,
+    pub template_cache_ttl_secs: u64,
+    pub template_asset_dir: String,
+    pub s3_bucket_templates: String,
 }
 
 impl Default for AppConfig {
@@ -98,6 +107,12 @@ impl Default for AppConfig {
             green_api_media_url: None,
             green_api_instance_id: None,
             green_api_token: None,
+            // Template resolution defaults
+            core_api_url: None,
+            core_service_token: None,
+            template_cache_ttl_secs: 300, // 5 minutes
+            template_asset_dir: "./template-assets".to_string(),
+            s3_bucket_templates: "templates".to_string(),
         }
     }
 }
@@ -238,6 +253,41 @@ impl ApiState {
             }
         };
 
+        // Initialize template resolver (optional - only if CORE_API_URL is configured)
+        let template_resolver = if let (Some(api_url), Some(token)) = (
+            config.core_api_url.as_ref(),
+            config.core_service_token.as_ref(),
+        ) {
+            match TemplateApiClient::new(api_url.clone(), token.clone()) {
+                Ok(api_client) => {
+                    let asset_manager = Arc::new(AssetManager::new(
+                        s3_client.clone(),
+                        PathBuf::from(&config.template_asset_dir),
+                        config.s3_bucket_templates.clone(),
+                    ));
+                    let resolver = Arc::new(TemplateResolver::new(
+                        Arc::new(api_client),
+                        asset_manager,
+                        config.template_cache_ttl_secs,
+                    ));
+                    tracing::info!("Template resolver configured with backend: {}", api_url);
+                    Some(resolver)
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to initialize template API client: {}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::info!("Template resolver not configured - using built-in templates only");
+            None
+        };
+
+        // Initialize Typst generator for dynamic templates
+        let typst_generator = Arc::new(crate::infrastructure::generators::TypstGenerator::new(
+            work_dir.clone(),
+        ));
+
         // Initialize document orchestrator
         let document_orchestrator = Arc::new(DocumentOrchestrator::new(
             generator_factory.clone(),
@@ -245,6 +295,8 @@ impl ApiState {
             cache_service.clone(),
             email_service.clone(),
             whatsapp_service.clone(),
+            template_resolver.clone(),
+            typst_generator,
         ));
 
         // Initialize notification orchestrator
@@ -280,6 +332,7 @@ impl ApiState {
             cache_service,
             storage_service,
             concurrency_controller,
+            template_resolver,
         })
     }
 }

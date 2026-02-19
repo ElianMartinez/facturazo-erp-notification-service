@@ -12,10 +12,11 @@ use crate::application::commands::{GenerateDocumentCommand, SendNotificationComm
 use crate::domain::document::DocumentType;
 use crate::infrastructure::cache::CacheService;
 use crate::infrastructure::generators::{
-    DocumentType as GenDocType, GenerationOptions, GeneratorFactory,
+    DocumentType as GenDocType, GenerationOptions, GeneratorFactory, TypstGenerator,
 };
 use crate::infrastructure::notifications::{EmailService, WhatsAppProvider};
 use crate::infrastructure::storage::StorageService;
+use crate::infrastructure::template_resolver::TemplateResolver;
 
 /// Document generation orchestrator
 ///
@@ -32,6 +33,10 @@ pub struct DocumentOrchestrator {
     email_service: Option<Arc<EmailService>>,
     #[allow(dead_code)]
     whatsapp_service: Option<Arc<dyn WhatsAppProvider>>,
+    /// Dynamic template resolver (None = use built-in templates only)
+    template_resolver: Option<Arc<TemplateResolver>>,
+    /// Typst generator for dynamic templates
+    typst_generator: Arc<TypstGenerator>,
 }
 
 impl DocumentOrchestrator {
@@ -41,6 +46,8 @@ impl DocumentOrchestrator {
         cache: Arc<CacheService>,
         email_service: Option<Arc<EmailService>>,
         whatsapp_service: Option<Arc<dyn WhatsAppProvider>>,
+        template_resolver: Option<Arc<TemplateResolver>>,
+        typst_generator: Arc<TypstGenerator>,
     ) -> Self {
         Self {
             generator_factory,
@@ -48,6 +55,8 @@ impl DocumentOrchestrator {
             cache,
             email_service,
             whatsapp_service,
+            template_resolver,
+            typst_generator,
         }
     }
 
@@ -57,43 +66,57 @@ impl DocumentOrchestrator {
         let start_time = std::time::Instant::now();
         info!("Starting document generation workflow");
 
-        // 1. Map document type
-        let gen_doc_type = self.map_document_type(&command.document_type);
-
-        // 2. Prepare generation options
-        let options = GenerationOptions {
-            watermark: None,
-            password_protect: false,
-            compress: true,
-            include_attachments: false,
+        // 1. Try dynamic template from backend (PDF only)
+        let dynamic_result = if command.format == crate::domain::document::DocumentFormat::Pdf {
+            self.try_dynamic_template(&command).await
+        } else {
+            None
         };
 
-        // 3. Generate document
-        info!(
-            "Generating document: {:?} as {:?}",
-            command.document_type, command.format
-        );
-        let result = self
-            .generator_factory
-            .generate(
-                gen_doc_type,
-                command.format.clone(),
-                command.data.clone(),
-                options,
-            )
-            .await?;
+        let (document_bytes, mime_type, document_id) = if let Some(pdf_bytes) = dynamic_result {
+            info!("Generated PDF from dynamic backend template");
+            let doc_id = uuid::Uuid::new_v4().to_string();
+            (pdf_bytes, "application/pdf".to_string(), doc_id)
+        } else {
+            // 2. Fallback to built-in generator
+            let gen_doc_type = self.map_document_type(&command.document_type);
+            let options = GenerationOptions {
+                watermark: None,
+                password_protect: false,
+                compress: true,
+                include_attachments: false,
+            };
 
-        let document_bytes = result.document_bytes.clone();
-        let mime_type = result.mime_type.clone();
+            info!(
+                "Generating document: {:?} as {:?} (built-in)",
+                command.document_type, command.format
+            );
+            let result = self
+                .generator_factory
+                .generate(
+                    gen_doc_type,
+                    command.format.clone(),
+                    command.data.clone(),
+                    options,
+                )
+                .await?;
+
+            (
+                result.document_bytes,
+                result.mime_type,
+                result.metadata.document_id,
+            )
+        };
+
         let file_size = document_bytes.len();
 
-        // 4. Store document if enabled
+        // 3. Store document if enabled
         let storage_url = if command.storage_enabled {
             let path = format!(
                 "{}/{}/{}_{}.{}",
                 command.tenant_id,
                 command.document_type.as_str(),
-                result.metadata.document_id,
+                document_id,
                 chrono::Utc::now().format("%Y%m%d_%H%M%S"),
                 command.format.file_extension()
             );
@@ -108,8 +131,8 @@ impl DocumentOrchestrator {
             None
         };
 
-        // 5. Cache result for quick retrieval
-        let cache_key = format!("doc:{}:{}", command.tenant_id, result.metadata.document_id);
+        // 4. Cache result for quick retrieval
+        let cache_key = format!("doc:{}:{}", command.tenant_id, document_id);
         self.cache.set(&cache_key, &document_bytes, 3600).await; // 1 hour TTL
 
         let elapsed = start_time.elapsed();
@@ -120,13 +143,56 @@ impl DocumentOrchestrator {
         );
 
         Ok(DocumentResult {
-            document_id: result.metadata.document_id,
+            document_id,
             document_bytes,
             mime_type,
             storage_url,
             generation_time_ms: elapsed.as_millis() as u64,
             file_size,
         })
+    }
+
+    /// Try to generate PDF using a dynamic template from the .NET backend.
+    /// Returns None if resolver is not configured or resolution/generation fails.
+    async fn try_dynamic_template(&self, command: &GenerateDocumentCommand) -> Option<Vec<u8>> {
+        let resolver = self.template_resolver.as_ref()?;
+
+        let tenant_id: i64 = command.tenant_id.parse().ok()?;
+        let doc_type_code = command.document_type.to_backend_code();
+
+        match resolver.resolve(tenant_id, doc_type_code).await {
+            Ok(Some(cached)) => {
+                info!(
+                    template_id = cached.template_id,
+                    version = cached.version,
+                    "Using dynamic template from backend"
+                );
+                match self
+                    .typst_generator
+                    .generate_from_template(
+                        &cached.typst_source,
+                        &command.data,
+                        &cached.asset_dir,
+                        &cached.font_paths,
+                    )
+                    .await
+                {
+                    Ok(pdf) => Some(pdf),
+                    Err(e) => {
+                        warn!(error = %e, "Dynamic template compilation failed, falling back to built-in");
+                        None
+                    }
+                }
+            }
+            Ok(None) => {
+                // No dynamic template available, use built-in
+                None
+            }
+            Err(e) => {
+                warn!(error = %e, "Template resolution error, falling back to built-in");
+                None
+            }
+        }
     }
 
     fn map_document_type(&self, doc_type: &DocumentType) -> GenDocType {

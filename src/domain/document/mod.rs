@@ -65,6 +65,18 @@ impl DocumentType {
             DocumentType::Custom(s) => s,
         }
     }
+
+    /// Map to the .NET backend document_type_code used by the template resolver
+    pub fn to_backend_code(&self) -> &str {
+        match self {
+            DocumentType::Invoice => "INVOICE_B01",
+            DocumentType::CreditNote => "CREDIT_NOTE_B04",
+            DocumentType::Quotation => "QUOTATION",
+            DocumentType::Receipt => "RECEIPT",
+            DocumentType::Report => "REPORT",
+            DocumentType::Custom(s) => s,
+        }
+    }
 }
 
 /// Document status

@@ -8,6 +8,8 @@ use tokio::fs;
 use tokio::process::Command;
 use uuid::Uuid;
 
+use super::visual_codes;
+
 /// Typst-based PDF generator
 pub struct TypstGenerator {
     work_dir: PathBuf,
@@ -85,8 +87,11 @@ impl TypstGenerator {
         // Ensure work directory exists
         fs::create_dir_all(&self.work_dir).await?;
 
+        // Process visual code directives ({{qr ...}}, {{barcode ...}})
+        let typst_content = visual_codes::process_directives(typst_content, &self.work_dir)?;
+
         // Write Typst content to file
-        fs::write(&typst_file, typst_content).await?;
+        fs::write(&typst_file, &typst_content).await?;
 
         // Run Typst compiler
         let mut cmd = Command::new("typst");
@@ -161,6 +166,66 @@ impl TypstGenerator {
 
         // Generate PDF
         self.generate_pdf(&typst_content).await
+    }
+
+    /// Generate PDF from a dynamic backend-resolved template.
+    /// Renders Handlebars variables into Typst source, then compiles with
+    /// the asset directory as --root and extra font paths from downloaded assets.
+    pub async fn generate_from_template(
+        &self,
+        typst_source: &str,
+        data: &Value,
+        asset_dir: &Path,
+        extra_font_paths: &[PathBuf],
+    ) -> Result<Vec<u8>> {
+        // 1. Render Handlebars variables into Typst source
+        let rendered = self.render_template(typst_source, data)?;
+
+        // 2. Process visual code directives ({{qr ...}}, {{barcode ...}})
+        let rendered = visual_codes::process_directives(&rendered, asset_dir)?;
+
+        // 3. Write to temp .typ file inside asset_dir so relative #image() paths work
+        let temp_id = Uuid::new_v4().to_string();
+        let typst_file = asset_dir.join(format!("_render_{}.typ", temp_id));
+        let pdf_file = asset_dir.join(format!("_render_{}.pdf", temp_id));
+
+        fs::create_dir_all(asset_dir).await?;
+        fs::write(&typst_file, &rendered).await?;
+
+        // 3. Build typst compile command with --root pointing to asset_dir
+        let mut cmd = Command::new("typst");
+        cmd.arg("compile").arg("--root").arg(asset_dir);
+
+        // Add default font dir
+        if let Some(ref font_dir) = self.font_dir {
+            cmd.arg("--font-path").arg(font_dir);
+        }
+
+        // Add extra font paths from downloaded template assets
+        for fp in extra_font_paths {
+            cmd.arg("--font-path").arg(fp);
+        }
+
+        cmd.arg(&typst_file).arg(&pdf_file);
+
+        let output = cmd.output().await?;
+
+        // Clean up temp .typ file immediately
+        let _ = fs::remove_file(&typst_file).await;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            let _ = fs::remove_file(&pdf_file).await;
+            return Err(anyhow::anyhow!(
+                "Typst compilation failed for dynamic template: {}",
+                error
+            ));
+        }
+
+        let pdf_bytes = fs::read(&pdf_file).await?;
+        let _ = fs::remove_file(&pdf_file).await;
+
+        Ok(pdf_bytes)
     }
 
     /// Check if Typst is installed
