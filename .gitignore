@@ -4,3 +4,6 @@
 # Generated files
 storage/
 temp_*.typ
+temp/
+facturas/
+.DS_Store

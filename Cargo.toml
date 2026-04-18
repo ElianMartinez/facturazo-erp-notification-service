@@ -6,6 +6,11 @@ rust-version = "1.75"
 
 [dependencies]
 # ============================================
+# PDF generation (vendored - patched for Unicode WinAnsi + dynamic headers + bold)
+# ============================================
+mr_pdf = { path = "vendor/mr_pdf" }
+
+# ============================================
 # Core & Async Runtime
 # ============================================
 tokio = { version = "1.36", features = ["full"] }
@@ -237,6 +242,10 @@ path = "src/bin/kafka_worker.rs"
 [[bin]]
 name = "local-test"
 path = "src/bin/local_test.rs"
+
+[[bin]]
+name = "test-streaming-report"
+path = "src/bin/test_streaming_report.rs"
 
 [lib]
 name = "pdf_services"

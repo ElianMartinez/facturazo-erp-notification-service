@@ -18,6 +18,10 @@ pub mod report_generator;
 pub mod typst_generator;
 pub mod visual_codes;
 
+// New streaming PDF engine for ERP reports (replaces Typst path for reports only)
+pub mod streaming_report_engine;
+pub mod streaming_report_generator;
+
 // Excel & CSV generators
 pub mod csv_generator;
 pub mod erp_report_csv_generator;
