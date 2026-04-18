@@ -48,12 +48,12 @@ impl StreamingReportGenerator {
         // Build engine config from payload
         let config = self.build_config(payload);
 
-        // Visible columns (skip hideInPrint)
+        // Visible columns (skip hidden / hideInPrint)
         let visible_cols: Vec<&ColumnDefinition> = payload
             .metadata
             .columns
             .iter()
-            .filter(|c| !c.hide_in_print)
+            .filter(|c| !c.hide_in_print && !c.hidden)
             .collect();
 
         // Dispatch by structure type
@@ -118,7 +118,7 @@ impl StreamingReportGenerator {
             .metadata
             .columns
             .iter()
-            .filter(|c| !c.hide_in_print)
+            .filter(|c| !c.hide_in_print && !c.hidden)
             .map(|c| Column {
                 name: c.label.clone(),
                 width: match c.width {
