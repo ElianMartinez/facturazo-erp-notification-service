@@ -238,78 +238,19 @@ pub fn render_report<R: RowSource>(
     let _bold_font_id = register_roboto_fonts(&mut pdf);
 
     let scale = config.scale;
-    let title_size = (13.0 * scale) as f64;
-    let company_name_size = (12.0 * scale) as f64;
-    let info_size = (8.0 * scale) as f64;
-    let small_size = (7.5 * scale) as f64;
 
-    // ============================================
-    // Header de 3 zonas usando una tabla invisible
-    // ============================================
-    let company_owned = config.company.clone();
-    let company_addr_owned = config.company_address.clone();
-    let company_id_owned = config.company_id.clone();
-    let title_owned = config.title.clone();
-    let breadcrumb_owned = config.breadcrumb.clone();
-    let period_owned = config.period.clone();
-    let generated_owned = config.generated_at.clone();
-    let user_owned = config.user_name.clone();
-    let muted = rgb(config.branding.muted);
-    let dark = rgb(config.branding.text_dark);
+    // Header genérico (mismo que render_grouped_report y render_hierarchical_report)
+    render_page_header(&mut pdf, config)?;
 
-    pdf.table(|t| {
-        t.widths(vec![30.0_f64.pct(), 40.0_f64.pct(), 30.0_f64.pct()]);
-        t.column_align(0, Align::Left);
-        t.column_align(1, Align::Center);
-        t.column_align(2, Align::Right);
-        t.column_valign(0, VAlign::Top);
-        t.column_valign(1, VAlign::Top);
-        t.column_valign(2, VAlign::Top);
-        t.border(TableBorderStyle::None);
-
-        t.row_style().font_size(company_name_size);
-        t.row(vec![
-            company_owned.as_str(),
-            title_owned.as_str(),
-            breadcrumb_owned.as_str(),
-        ]);
-
-        t.row_style().font_size(small_size);
-        t.row(vec![
-            company_addr_owned.as_str(),
-            "",
-            &format!("Período: {}", period_owned),
-        ]);
-
-        t.row_style().font_size(small_size);
-        t.row(vec!["", "", &format!("Generado: {}", generated_owned)]);
-
-        t.row_style().font_size(small_size);
-        t.row(vec!["", "", &format!("Usuario: {}", user_owned)]);
-
-        if !company_id_owned.is_empty() {
-            t.row_style().font_size(small_size);
-            t.row(vec![company_id_owned.as_str(), "", ""]);
-        }
-    })?;
-
-    // Línea separadora gris fina
-    pdf.text("").size(2.0_f64 * scale as f64).margin_bottom(4.0);
-
-    // Etiqueta de sección
+    // Etiqueta de sección opcional
     if let Some(section) = &config.section_label {
+        let small_size = (7.5 * scale) as f64;
         pdf.text(&format!("  {}  ", section.to_uppercase()))
             .size(small_size)
             .color(rgb(config.branding.text_dark))
             .align_left()
             .margin_bottom(2.0);
     }
-
-    // Suprimir warnings de variables no usadas
-    let _ = title_size;
-    let _ = info_size;
-    let _ = muted;
-    let _ = dark;
 
     let usable_width = compute_usable_width_pt(config);
     let column_widths_pt = compute_column_widths(
