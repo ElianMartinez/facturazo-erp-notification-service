@@ -123,14 +123,15 @@ pub struct Branding {
 
 impl Branding {
     pub fn facturazo() -> Self {
+        // Paleta slate sobria, optimizada para impresión (B/N y color)
         Self {
-            primary: (15, 76, 117),
-            accent: (242, 165, 65),
-            text_dark: (33, 33, 33),
+            primary: (71, 85, 105),  // slate-600 — column headers
+            accent: (51, 65, 85),    // slate-700 — group label bar
+            text_dark: (15, 23, 42), // slate-900 — texto base
             text_light: (255, 255, 255),
-            row_alt: (245, 247, 250),
-            border: (220, 220, 220),
-            muted: (130, 130, 130),
+            row_alt: (248, 250, 252), // slate-50 — zebra apenas perceptible
+            border: (226, 232, 240),  // slate-200 — bordes suaves
+            muted: (100, 116, 139),   // slate-500
         }
     }
 }
@@ -162,6 +163,24 @@ pub struct ReportConfig {
 // ============================================================================
 
 const MM_TO_PT: f32 = 2.83465;
+
+/// Registra Roboto-Regular como default y Roboto-Bold (opcional) en el PDF.
+/// El primer font registrado se vuelve el default automáticamente — por eso Regular va primero.
+/// Si los archivos no existen, cae a Helvetica built-in (WinAnsi parcheado).
+fn register_roboto_fonts<W: Write>(pdf: &mut Pdf<W>) -> Option<mr_pdf::FontId> {
+    let font_dir = std::env::var("PDF_FONTS_DIR").unwrap_or_else(|_| "fonts".to_string());
+    let regular_path = format!("{}/Roboto-Regular.ttf", font_dir);
+    let bold_path = format!("{}/Roboto-Bold.ttf", font_dir);
+
+    if std::path::Path::new(&regular_path).exists() {
+        let _ = pdf.register_font("Regular", &regular_path);
+    }
+    if std::path::Path::new(&bold_path).exists() {
+        pdf.register_font("Bold", &bold_path).ok()
+    } else {
+        None
+    }
+}
 
 /// Source of rows. Implement this for any iterable: DB cursor, channel rx, Vec, etc.
 pub trait RowSource {
@@ -205,21 +224,18 @@ pub fn render_report<R: RowSource>(
     let file = File::create(output_path)?;
     let mut pdf = Pdf::stream(file)?;
 
-    // No registramos fuentes — usamos la built-in Helvetica con WinAnsiEncoding
-    // (mr_pdf vendoreado y patcheado para convertir Unicode → WinAnsi correctamente)
     pdf.set_paper_size(config.page_size.to_mr_pdf());
     pdf.set_orientation(config.orientation.to_mr_pdf());
 
-    // mr_pdf usa margen uniforme; usamos el promedio
     let avg_margin =
         (config.margins.top + config.margins.bottom + config.margins.left + config.margins.right)
             / 4.0;
     pdf.set_margin((avg_margin * MM_TO_PT) as f64);
 
-    // Ajustar padding de celdas y line-spacing proporcional al scale
-    // para que las filas sean compactas cuando el scale es bajo
     pdf.cell_padding = (5.0 * config.scale as f64).max(1.0);
-    pdf.line_spacing = 1.15; // 1.3 default → 1.15 más compacto
+    pdf.line_spacing = 1.15;
+
+    let _bold_font_id = register_roboto_fonts(&mut pdf);
 
     let scale = config.scale;
     let title_size = (13.0 * scale) as f64;
@@ -409,6 +425,8 @@ pub fn render_grouped_report(
     pdf.cell_padding = (5.0 * config.scale as f64).max(1.0);
     pdf.line_spacing = 1.15;
 
+    let bold_font_id = register_roboto_fonts(&mut pdf);
+
     let scale = config.scale;
 
     // Header de la página (3 zonas)
@@ -456,30 +474,41 @@ pub fn render_grouped_report(
         // ROW STYLE for data rows
         tb.row_style().font_size(row_size);
 
+        let text_dark = rgb(config.branding.text_dark);
         // HEADER ROW 1: group label spanning all columns
         let group_label_for_header = group.label.clone();
         let accent = rgb(config.branding.accent);
-        let text_dark = rgb(config.branding.text_dark);
-        tb.header_row_builder(|row| {
-            row.cell(&group_label_for_header)
+        let text_light_1 = rgb(config.branding.text_light);
+        let bold_for_header = bold_font_id;
+        tb.header_row_builder(move |row| {
+            let cell = row
+                .cell(&group_label_for_header)
                 .span(n_cols)
                 .align(Align::Left)
                 .bg_color(accent)
-                .text_color(text_dark)
+                .text_color(text_light_1)
                 .font_size(group_label_size);
+            if let Some(b) = bold_for_header {
+                cell.font(b);
+            }
         });
 
         // HEADER ROW 2: column headers
         let cols_for_header = config.columns.clone();
         let primary = rgb(config.branding.primary);
         let text_light = rgb(config.branding.text_light);
-        tb.header_row_builder(|row| {
+        let bold_for_cols = bold_font_id;
+        tb.header_row_builder(move |row| {
             for col in cols_for_header.iter() {
-                row.cell(&col.name)
+                let cell = row
+                    .cell(&col.name)
                     .align(col.align.to_mr_pdf())
                     .bg_color(primary)
                     .text_color(text_light)
                     .font_size(header_size);
+                if let Some(b) = bold_for_cols {
+                    cell.font(b);
+                }
             }
         });
 
@@ -497,7 +526,7 @@ pub fn render_grouped_report(
         // Subtotal as last row(s) — also streamed
         if !group.subtotal.is_empty() {
             let subtotal_owned = group.subtotal;
-            let subtotal_bg = MrColor::Rgb(220, 232, 220);
+            let subtotal_bg = palette_leaf_subtotal();
             streaming.row(|rb| {
                 for cell in &subtotal_owned {
                     rb.cell(cell)
@@ -516,7 +545,7 @@ pub fn render_grouped_report(
     if !grand_total.is_empty() {
         let _ = pdf.text("").size((4.0 * scale) as f64).margin_bottom(4.0);
 
-        let primary = rgb(config.branding.primary);
+        let grand_bg = palette_grand_total();
         let text_light = rgb(config.branding.text_light);
         let total_font = ((config.font_size_base + 1.5) * scale) as f64;
         let widths = column_widths_pt.clone();
@@ -530,7 +559,7 @@ pub fn render_grouped_report(
             }
             t.row_style()
                 .font_size(total_font)
-                .bg_color(primary)
+                .bg_color(grand_bg)
                 .text_color(text_light);
             t.row(gt.iter().map(|s| s.as_str()).collect::<Vec<_>>());
         })?;
@@ -564,20 +593,7 @@ pub fn render_hierarchical_report(
     pdf.cell_padding = (5.0 * config.scale as f64).max(1.0);
     pdf.line_spacing = 1.15;
 
-    // Roboto-Regular como default + Roboto-Bold para totales/headers.
-    // El primer register se vuelve default automáticamente.
-    let font_dir = std::env::var("PDF_FONTS_DIR").unwrap_or_else(|_| "fonts".to_string());
-    let regular_path = format!("{}/Roboto-Regular.ttf", font_dir);
-    let bold_path = format!("{}/Roboto-Bold.ttf", font_dir);
-
-    if std::path::Path::new(&regular_path).exists() {
-        pdf.register_font("Regular", &regular_path)?;
-    }
-    let bold_font_id = if std::path::Path::new(&bold_path).exists() {
-        pdf.register_font("Bold", &bold_path).ok()
-    } else {
-        None
-    };
+    let bold_font_id = register_roboto_fonts(&mut pdf);
 
     let scale = config.scale;
     let header_size = ((config.font_size_base + 0.5) * scale) as f64;
@@ -1090,29 +1106,29 @@ fn label_style(config: &ReportConfig, depth: usize) -> (MrColor, MrColor, f32) {
 // Paleta de colores para reportes agrupados
 // ============================================
 
-/// Composite group header: teal/azulado intenso, profesional
-fn palette_group_header(_brand: &Branding) -> MrColor {
-    MrColor::Rgb(34, 87, 122) // teal oscuro
+/// Composite group header: slate-700 elegante
+fn palette_group_header(brand: &Branding) -> MrColor {
+    rgb(brand.accent) // slate-700
 }
 
-/// Column headers: azul corporativo sólido
+/// Column headers: slate-600 sólido
 fn palette_column_header(brand: &Branding) -> MrColor {
-    rgb(brand.primary) // azul primario
+    rgb(brand.primary) // slate-600
 }
 
-/// Leaf subtotal row: verde claro suave
+/// Leaf subtotal row: slate-100 neutro
 fn palette_leaf_subtotal() -> MrColor {
-    MrColor::Rgb(225, 240, 220) // verde muy claro
+    MrColor::Rgb(241, 245, 249) // slate-100
 }
 
-/// Parent total row: verde mediano (más fuerte que leaf subtotal)
+/// Parent total row: slate-300 (más fuerte que leaf subtotal)
 fn palette_parent_total() -> MrColor {
-    MrColor::Rgb(146, 196, 125) // verde mediano
+    MrColor::Rgb(203, 213, 225) // slate-300
 }
 
-/// Grand total row: dark + bold + white text
+/// Grand total row: slate-900 + texto blanco
 fn palette_grand_total() -> MrColor {
-    MrColor::Rgb(28, 56, 89) // azul muy oscuro casi navy
+    MrColor::Rgb(15, 23, 42) // slate-900
 }
 
 // Helper: render page header — 3 zonas, tipografía jerárquica, líneas de acento
