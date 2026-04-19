@@ -1101,9 +1101,9 @@ fn render_page_header<W: Write>(
     let info_size = (8.0 * scale) as f64;
     let id_size = (7.5 * scale) as f64;
 
-    let primary = rgb(config.branding.primary);
+    let text_dark = rgb(config.branding.text_dark);
     let muted = rgb(config.branding.muted);
-    let accent = rgb(config.branding.accent);
+    let accent_line_color = rgb(config.branding.muted);
 
     // Capturar todos los strings ANTES (para closures)
     let company = config.company.clone();
@@ -1143,12 +1143,12 @@ fn render_page_header<W: Write>(
         t.row_builder(|row| {
             // Col 1: empresa multi-line
             let mut c1: mr_pdf::layout::table::TableCell = col1.as_str().into();
-            c1.text_color = Some(primary);
+            c1.text_color = Some(text_dark);
             c1.font_size = Some(company_size);
             row.cells.push(c1);
             // Col 2: título principal
             let mut c2: mr_pdf::layout::table::TableCell = title.as_str().into();
-            c2.text_color = Some(primary);
+            c2.text_color = Some(text_dark);
             c2.font_size = Some(title_size);
             c2.align = Some(Align::Center);
             row.cells.push(c2);
@@ -1183,7 +1183,7 @@ fn render_page_header<W: Write>(
     let accent_line = format!("{}", "_".repeat(180));
     pdf.text(&accent_line)
         .size((2.0 * scale) as f64)
-        .color(accent)
+        .color(accent_line_color)
         .align_left()
         .margin_bottom(3.0);
 
