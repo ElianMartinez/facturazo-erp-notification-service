@@ -113,7 +113,9 @@ pub struct Column {
 #[derive(Clone)]
 pub struct Branding {
     pub primary: (u8, u8, u8),
+    pub primary_fg: (u8, u8, u8),
     pub accent: (u8, u8, u8),
+    pub accent_fg: (u8, u8, u8),
     pub text_dark: (u8, u8, u8),
     pub text_light: (u8, u8, u8),
     pub row_alt: (u8, u8, u8),
@@ -123,15 +125,17 @@ pub struct Branding {
 
 impl Branding {
     pub fn facturazo() -> Self {
-        // Paleta slate sobria, optimizada para impresión (B/N y color)
+        // Paleta clara estilo Fiori/QuickBooks: contraste por tipografía, no por color
         Self {
-            primary: (71, 85, 105),  // slate-600 — column headers
-            accent: (51, 65, 85),    // slate-700 — group label bar
-            text_dark: (15, 23, 42), // slate-900 — texto base
-            text_light: (255, 255, 255),
-            row_alt: (248, 250, 252), // slate-50 — zebra apenas perceptible
-            border: (226, 232, 240),  // slate-200 — bordes suaves
-            muted: (100, 116, 139),   // slate-500
+            primary: (241, 245, 249),    // slate-100 — column headers (claro)
+            primary_fg: (15, 23, 42),    // slate-900 — texto sobre headers claros
+            accent: (226, 232, 240),     // slate-200 — group label bar
+            accent_fg: (15, 23, 42),     // slate-900 — texto sobre group bar
+            text_dark: (15, 23, 42),     // slate-900 — texto base
+            text_light: (255, 255, 255), // blanco — solo para grand total (fondo oscuro)
+            row_alt: (248, 250, 252),    // slate-50 — zebra apenas perceptible
+            border: (226, 232, 240),     // slate-200 — bordes suaves
+            muted: (100, 116, 139),      // slate-500
         }
     }
 }
@@ -287,7 +291,7 @@ pub fn render_report<R: RowSource>(
 
         tb.header_style()
             .bg_color(rgb(config.branding.primary))
-            .text_color(rgb(config.branding.text_light))
+            .text_color(rgb(config.branding.primary_fg))
             .font_size(header_size);
 
         tb.row_style().font_size(row_size);
@@ -314,7 +318,7 @@ pub fn render_report<R: RowSource>(
     if !summary.is_empty() {
         pdf.text("").size(4.0_f64 * scale as f64).margin_bottom(4.0);
 
-        let primary = rgb(config.branding.primary);
+        let total_bg = palette_grand_total();
         let text_light = rgb(config.branding.text_light);
         let total_font = ((config.font_size_base + 1.5) * scale) as f64;
         let summary_owned: Vec<(String, String)> = summary.to_vec();
@@ -329,7 +333,7 @@ pub fn render_report<R: RowSource>(
                 if is_total {
                     t.row_style()
                         .font_size(total_font)
-                        .bg_color(primary)
+                        .bg_color(total_bg)
                         .text_color(text_light);
                 } else {
                     t.row_style().font_size(row_size);
@@ -419,7 +423,7 @@ pub fn render_grouped_report(
         // HEADER ROW 1: group label spanning all columns
         let group_label_for_header = group.label.clone();
         let accent = rgb(config.branding.accent);
-        let text_light_1 = rgb(config.branding.text_light);
+        let accent_fg = rgb(config.branding.accent_fg);
         let bold_for_header = bold_font_id;
         tb.header_row_builder(move |row| {
             let cell = row
@@ -427,7 +431,7 @@ pub fn render_grouped_report(
                 .span(n_cols)
                 .align(Align::Left)
                 .bg_color(accent)
-                .text_color(text_light_1)
+                .text_color(accent_fg)
                 .font_size(group_label_size);
             if let Some(b) = bold_for_header {
                 cell.font(b);
@@ -437,7 +441,7 @@ pub fn render_grouped_report(
         // HEADER ROW 2: column headers
         let cols_for_header = config.columns.clone();
         let primary = rgb(config.branding.primary);
-        let text_light = rgb(config.branding.text_light);
+        let primary_fg = rgb(config.branding.primary_fg);
         let bold_for_cols = bold_font_id;
         tb.header_row_builder(move |row| {
             for col in cols_for_header.iter() {
@@ -445,7 +449,7 @@ pub fn render_grouped_report(
                     .cell(&col.name)
                     .align(col.align.to_mr_pdf())
                     .bg_color(primary)
-                    .text_color(text_light)
+                    .text_color(primary_fg)
                     .font_size(header_size);
                 if let Some(b) = bold_for_cols {
                     cell.font(b);
@@ -468,12 +472,17 @@ pub fn render_grouped_report(
         if !group.subtotal.is_empty() {
             let subtotal_owned = group.subtotal;
             let subtotal_bg = palette_leaf_subtotal();
+            let bold_for_subtotal = bold_font_id;
             streaming.row(|rb| {
                 for cell in &subtotal_owned {
-                    rb.cell(cell)
+                    let c = rb
+                        .cell(cell)
                         .bg_color(subtotal_bg)
                         .text_color(text_dark)
                         .font_size(row_size);
+                    if let Some(b) = bold_for_subtotal {
+                        c.font(b);
+                    }
                 }
             })?;
         }
@@ -491,6 +500,7 @@ pub fn render_grouped_report(
         let total_font = ((config.font_size_base + 1.5) * scale) as f64;
         let widths = column_widths_pt.clone();
         let gt = grand_total.clone();
+        let bold_for_total = bold_font_id;
 
         pdf.table(|t| {
             t.widths(widths.iter().map(|w| *w as f64).collect::<Vec<_>>());
@@ -498,10 +508,14 @@ pub fn render_grouped_report(
             for (i, col) in config.columns.iter().enumerate() {
                 t.column_align(i, col.align.to_mr_pdf());
             }
-            t.row_style()
+            let style = t
+                .row_style()
                 .font_size(total_font)
                 .bg_color(grand_bg)
                 .text_color(text_light);
+            if let Some(b) = bold_for_total {
+                style.font(b);
+            }
             t.row(gt.iter().map(|s| s.as_str()).collect::<Vec<_>>());
         })?;
     }
@@ -581,10 +595,10 @@ pub fn render_hierarchical_report(
     let first_label = first_leaf_path.join("  ›  ");
 
     let group_bg_init = palette_group_header(&config.branding);
-    let group_fg_init = rgb(config.branding.text_light);
+    let group_fg_init = rgb(config.branding.accent_fg);
     let cols_for_header = config.columns.clone();
     let col_bg = palette_column_header(&config.branding);
-    let col_fg = rgb(config.branding.text_light);
+    let col_fg = rgb(config.branding.primary_fg);
     let n_cols_init = n_cols;
 
     let first_label_clone = first_label.clone();
@@ -619,7 +633,7 @@ pub fn render_hierarchical_report(
 
     let mut total_rows: u64 = 0;
     let group_bg = palette_group_header(&config.branding);
-    let group_fg = rgb(config.branding.text_light);
+    let group_fg = rgb(config.branding.accent_fg);
     let leaf_subtotal_bg = palette_leaf_subtotal();
     let parent_total_bg = palette_parent_total();
     let grand_total_bg = palette_grand_total();
@@ -934,7 +948,7 @@ fn render_leaf_table<W: Write>(
     let composite_label = path.join("  ›  ");
     let label_size = ((config.font_size_base + 2.0) * scale) as f64;
     let group_bg = palette_group_header(&config.branding);
-    let group_fg = rgb(config.branding.text_light);
+    let group_fg = rgb(config.branding.accent_fg);
     tb.header_row_builder(move |row| {
         row.cell(&composite_label)
             .span(n_cols)
@@ -947,7 +961,7 @@ fn render_leaf_table<W: Write>(
     // Column headers row
     let cols_for_header = config.columns.clone();
     let col_bg = palette_column_header(&config.branding);
-    let col_fg = rgb(config.branding.text_light);
+    let col_fg = rgb(config.branding.primary_fg);
     tb.header_row_builder(|row| {
         for col in cols_for_header.iter() {
             row.cell(&col.name)
@@ -1034,11 +1048,12 @@ fn render_total_row<W: Write>(
 fn label_style(config: &ReportConfig, depth: usize) -> (MrColor, MrColor, f32) {
     let primary = rgb(config.branding.primary);
     let accent = rgb(config.branding.accent);
-    let text_light = rgb(config.branding.text_light);
+    let primary_fg = rgb(config.branding.primary_fg);
+    let accent_fg = rgb(config.branding.accent_fg);
     let text_dark = rgb(config.branding.text_dark);
     match depth {
-        0 => (primary, text_light, 2.5),
-        1 => (accent, text_dark, 1.5),
+        0 => (primary, primary_fg, 2.5),
+        1 => (accent, accent_fg, 1.5),
         _ => (MrColor::Rgb(230, 230, 230), text_dark, 1.0),
     }
 }
@@ -1047,14 +1062,14 @@ fn label_style(config: &ReportConfig, depth: usize) -> (MrColor, MrColor, f32) {
 // Paleta de colores para reportes agrupados
 // ============================================
 
-/// Composite group header: slate-700 elegante
+/// Composite group header: slate-200 (claro, contraste por tipografía)
 fn palette_group_header(brand: &Branding) -> MrColor {
-    rgb(brand.accent) // slate-700
+    rgb(brand.accent)
 }
 
-/// Column headers: slate-600 sólido
+/// Column headers: slate-100 (más claro que group bar para jerarquía visual)
 fn palette_column_header(brand: &Branding) -> MrColor {
-    rgb(brand.primary) // slate-600
+    rgb(brand.primary)
 }
 
 /// Leaf subtotal row: slate-100 neutro

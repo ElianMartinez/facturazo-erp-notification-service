@@ -1155,7 +1155,8 @@ fn draw_cell_content<W: Write>(
         pdf.fill_rect(x, bottom_y, w, h)?;
     }
 
-    pdf.set_stroke_color(Color::Rgb(0, 0, 0))?;
+    pdf.set_stroke_color(Color::Rgb(220, 220, 220))?;
+    pdf.set_line_width(0.4)?;
     match border_style {
         TableBorderStyle::Full => {
             pdf.rect(x, bottom_y, w, h)?;
