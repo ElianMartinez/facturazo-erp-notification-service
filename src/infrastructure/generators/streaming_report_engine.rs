@@ -1082,9 +1082,9 @@ fn palette_parent_total() -> MrColor {
     MrColor::Rgb(203, 213, 225) // slate-300
 }
 
-/// Grand total row: slate-900 + texto blanco
+/// Grand total row: slate-700 + texto blanco — fuerte pero no agresivo
 fn palette_grand_total() -> MrColor {
-    MrColor::Rgb(15, 23, 42) // slate-900
+    MrColor::Rgb(51, 65, 85) // slate-700
 }
 
 // Helper: render page header — 3 zonas, tipografía jerárquica, líneas de acento
