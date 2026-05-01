@@ -34,6 +34,10 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
                 .service(
                     web::scope("/documents")
                         .route("/generate/sync", web::post().to(handlers::generate_sync))
+                        .route(
+                            "/generate/stream",
+                            web::post().to(handlers::generate_sync_stream),
+                        )
                         .route("/generate/async", web::post().to(handlers::generate_async))
                         .route("/upload", web::post().to(handlers::upload_data))
                         .route("/{id}/status", web::get().to(handlers::get_status))
