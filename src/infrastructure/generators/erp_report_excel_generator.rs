@@ -3,6 +3,7 @@
 //! Generates professional Excel documents from ErpReportPayload
 
 use anyhow::Result;
+use chrono::DateTime;
 use rust_xlsxwriter::{Color, Format, FormatAlign, FormatBorder, Workbook, Worksheet};
 use std::collections::HashMap;
 
@@ -303,35 +304,13 @@ impl ErpReportExcelGenerator {
         Ok(row)
     }
 
-    /// Format datetime from ISO string to dd/MM/yyyy HH:mm format
+    /// Format datetime from ISO string to `dd/MM/yyyy hh:mm:ss AM/PM`.
+    /// Preserves the offset embedded in the input (callers already project to
+    /// tenant timezone). Falls back to the raw input if parsing fails — this
+    /// is best-effort cosmetic formatting, never drops the timestamp.
     fn format_datetime(iso_datetime: &str) -> String {
-        // Parse ISO date and format as dd/MM/yyyy HH:mm:ss (seconds included
-        // for auditability — generated timestamps must be precise).
-        if let Some(date_part) = iso_datetime.split('T').next() {
-            let parts: Vec<&str> = date_part.split('-').collect();
-            if parts.len() >= 3 {
-                let date = format!("{}/{}/{}", parts[2], parts[1], parts[0]);
-                if let Some(time_part) = iso_datetime.split('T').nth(1) {
-                    // Strip fractional seconds and any trailing timezone marker
-                    // (Z or ±HH:MM) so we get the bare HH:MM:SS for display.
-                    let time = time_part.split('.').next().unwrap_or(time_part);
-                    let time = time
-                        .split('+')
-                        .next()
-                        .unwrap_or(time)
-                        .split('-')
-                        .next()
-                        .unwrap_or(time)
-                        .trim_end_matches('Z');
-                    if time.len() >= 8 {
-                        return format!("{} {}", date, &time[..8]);
-                    }
-                    if time.len() >= 5 {
-                        return format!("{} {}", date, &time[..5]);
-                    }
-                }
-                return date;
-            }
+        if let Ok(parsed) = DateTime::parse_from_rfc3339(iso_datetime) {
+            return parsed.format("%d/%m/%Y %I:%M:%S %p").to_string();
         }
         iso_datetime.to_string()
     }

@@ -8,14 +8,14 @@ use mr_pdf::{
 use std::fs::File;
 use std::io::Write;
 
-/// Format an RFC 3339 / ISO 8601 datetime string as `dd/MM/yyyy HH:mm:ss`
+/// Format an RFC 3339 / ISO 8601 datetime string as `dd/MM/yyyy hh:mm:ss AM/PM`
 /// preserving the offset embedded in the input (so the value already projected
 /// to the tenant timezone is displayed verbatim). Falls back to the raw input
 /// if parsing fails — this is best-effort cosmetic formatting and must never
 /// drop the timestamp.
 fn format_generated_datetime(iso: &str) -> String {
     if let Ok(parsed) = DateTime::parse_from_rfc3339(iso) {
-        return parsed.format("%d/%m/%Y %H:%M:%S").to_string();
+        return parsed.format("%d/%m/%Y %I:%M:%S %p").to_string();
     }
     iso.to_string()
 }
