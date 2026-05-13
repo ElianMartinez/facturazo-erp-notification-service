@@ -1,9 +1,12 @@
 # ===========================================
 # Stage 1: Chef - Prepare recipe (Alpine)
 # ===========================================
-FROM rust:1.86-alpine AS chef
+FROM rust:1.91-alpine AS chef
 RUN apk add --no-cache musl-dev
-RUN cargo install cargo-chef
+# --locked pins cargo-chef to the lockfile-resolved versions, avoiding the
+# fresh-from-registry transitive (e.g. cargo-platform 0.3.3) that demands a
+# newer rustc than the 1.86 base image.
+RUN cargo install cargo-chef --locked
 WORKDIR /app
 
 # ===========================================
@@ -45,6 +48,11 @@ ENV RUSTFLAGS="-C target-feature=-crt-static"
 
 # Copy recipe and build dependencies (cached layer)
 COPY --from=planner /app/recipe.json recipe.json
+# mr_pdf is a path-vendored dependency referenced from Cargo.toml; chef cook
+# needs its Cargo.toml present to resolve the workspace, so we hand-copy the
+# vendor tree before cooking. Only the manifest is needed (sources arrive
+# with `COPY . .` below).
+COPY vendor/ vendor/
 RUN cargo chef cook --release --recipe-path recipe.json
 
 # Copy source code and build application

@@ -305,15 +305,27 @@ impl ErpReportExcelGenerator {
 
     /// Format datetime from ISO string to dd/MM/yyyy HH:mm format
     fn format_datetime(iso_datetime: &str) -> String {
-        // Parse ISO date and format as dd/MM/yyyy HH:mm
+        // Parse ISO date and format as dd/MM/yyyy HH:mm:ss (seconds included
+        // for auditability — generated timestamps must be precise).
         if let Some(date_part) = iso_datetime.split('T').next() {
             let parts: Vec<&str> = date_part.split('-').collect();
             if parts.len() >= 3 {
                 let date = format!("{}/{}/{}", parts[2], parts[1], parts[0]);
-                // Extract time if available
                 if let Some(time_part) = iso_datetime.split('T').nth(1) {
+                    // Strip fractional seconds and any trailing timezone marker
+                    // (Z or ±HH:MM) so we get the bare HH:MM:SS for display.
                     let time = time_part.split('.').next().unwrap_or(time_part);
-                    let time = time.trim_end_matches('Z');
+                    let time = time
+                        .split('+')
+                        .next()
+                        .unwrap_or(time)
+                        .split('-')
+                        .next()
+                        .unwrap_or(time)
+                        .trim_end_matches('Z');
+                    if time.len() >= 8 {
+                        return format!("{} {}", date, &time[..8]);
+                    }
                     if time.len() >= 5 {
                         return format!("{} {}", date, &time[..5]);
                     }
