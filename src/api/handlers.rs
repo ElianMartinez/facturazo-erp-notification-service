@@ -91,6 +91,114 @@ pub async fn generate_sync(
     }
 }
 
+/// Generate document synchronously and stream bytes back inline.
+/// POST /api/v1/documents/generate/stream
+/// Same payload as generate_sync. Returns the binary PDF directly with
+/// Content-Disposition: inline so the client can render it in an iframe
+/// (or trigger a download with `?download=1`).
+pub async fn generate_sync_stream(
+    req: HttpRequest,
+    query: web::Query<StreamQuery>,
+    mut data: web::Json<DocumentRequest>,
+    state: web::Data<ApiState>,
+) -> ApiResult<HttpResponse> {
+    let (tenant_id, user_id) = extract_tenant_user_or_default(&req);
+
+    data.metadata.tenant_id = tenant_id;
+    data.metadata.user_id = user_id;
+
+    let rate_limit_key = format!("{}:{}", tenant_id, user_id);
+    if state.rate_limiter.check_key(&rate_limit_key).is_err() {
+        return Ok(HttpResponse::TooManyRequests().json(json!({
+            "error": "Rate limit exceeded",
+            "retry_after": 60
+        })));
+    }
+
+    let document_id = data.id;
+    let document_type = data.document_type.clone();
+
+    // Map to domain document type. Stream endpoint only supports PDF flows
+    // (invoice/receipt/credit note); other types fall back to async path.
+    let domain_type = match document_type {
+        DocumentType::Invoice => DomainDocType::Invoice,
+        DocumentType::Receipt => DomainDocType::Receipt,
+        DocumentType::Custom(ref name) => DomainDocType::Custom(name.clone()),
+        _ => {
+            return Ok(HttpResponse::BadRequest().json(json!({
+                "error": "Stream endpoint only supports PDF document types",
+                "document_type": format!("{:?}", document_type)
+            })));
+        }
+    };
+
+    let request = data.into_inner();
+    let start = std::time::Instant::now();
+
+    let command = GenerateDocumentCommand {
+        tenant_id: request.metadata.tenant_id.to_string(),
+        user_id: Some(request.metadata.user_id.to_string()),
+        document_type: domain_type,
+        format: DocumentFormat::Pdf,
+        data: request.data.clone(),
+        template_id: request.template_id.clone(),
+        template_version: "latest".to_string(),
+        storage_enabled: !query.skip_storage.unwrap_or(false),
+        notification_enabled: false,
+        priority: crate::application::commands::Priority::Normal,
+    };
+
+    let result = match state.document_orchestrator.execute(command).await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Failed to generate document for stream: {:?}", e);
+            return Ok(HttpResponse::InternalServerError().json(json!({
+                "error": "Failed to generate document",
+                "details": e.to_string()
+            })));
+        }
+    };
+
+    let processing_time_ms = start.elapsed().as_millis() as u64;
+    let download = query.download.unwrap_or(false);
+    let raw_filename = query
+        .filename
+        .clone()
+        .unwrap_or_else(|| format!("document_{}.pdf", document_id));
+    let filename = sanitize_filename(&raw_filename);
+    let disposition = if download { "attachment" } else { "inline" };
+
+    Ok(HttpResponse::Ok()
+        .content_type(result.mime_type.clone())
+        .append_header((
+            "Content-Disposition",
+            format!("{}; filename=\"{}\"", disposition, filename),
+        ))
+        .append_header(("Content-Length", result.document_bytes.len().to_string()))
+        .append_header(("X-Document-Id", result.document_id.clone()))
+        .append_header(("X-Processing-Time-Ms", processing_time_ms.to_string()))
+        .body(result.document_bytes))
+}
+
+/// Strip path separators and control chars from a filename.
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| !matches!(c, '/' | '\\' | '\0' | '\n' | '\r' | '"'))
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct StreamQuery {
+    /// When true, returns Content-Disposition: attachment (forces download).
+    pub download: Option<bool>,
+    /// Override the suggested filename in Content-Disposition.
+    pub filename: Option<String>,
+    /// When true, skips uploading to long-term storage (useful for previews).
+    pub skip_storage: Option<bool>,
+}
+
 /// Queue document for async generation
 pub async fn generate_async(
     req: HttpRequest,
