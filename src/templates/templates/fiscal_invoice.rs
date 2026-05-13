@@ -431,6 +431,27 @@ impl FiscalInvoiceTemplate {
         }
     }
 
+    /// Explicit override for the colored header title (top-right of the document).
+    /// When present, takes precedence over e-NCF-based detection and the default
+    /// "Factura de Crédito Fiscal Electrónica". Used by non-fiscal documents
+    /// (Cotización, Preventa, Conduce) emitted from the Orders module — same
+    /// fiscal-invoice look without QR/eNCF, but with the correct document name.
+    fn get_document_type_override(
+        custom_fields: &Option<std::collections::HashMap<String, serde_json::Value>>,
+    ) -> Option<String> {
+        custom_fields
+            .as_ref()
+            .and_then(|fields| {
+                fields
+                    .get("document_type_label")
+                    .or_else(|| fields.get("documentTypeLabel"))
+                    .or_else(|| fields.get("DocumentTypeLabel"))
+            })
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
     /// Get invoice type from custom_fields
     /// Core-service now sends "invoice_type" directly as readable text
     /// Fallback to calculating from operation_type_code if not present
@@ -485,11 +506,20 @@ impl FiscalInvoiceTemplate {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        // Determine document type from e-NCF
-        let document_type = if let Some(fiscal) = &invoice.fiscal_info {
-            Self::get_document_type_name(&fiscal.e_ncf)
-        } else {
-            "Factura de Crédito Fiscal Electrónica"
+        // Determine document type — priority:
+        //   1. custom_fields.document_type_label (explicit override for non-fiscal docs)
+        //   2. e-NCF prefix when fiscal_info is present
+        //   3. default fiscal-invoice label
+        let document_type_override = Self::get_document_type_override(&invoice.custom_fields);
+        let document_type: &str = match document_type_override.as_deref() {
+            Some(label) => label,
+            None => {
+                if let Some(fiscal) = &invoice.fiscal_info {
+                    Self::get_document_type_name(&fiscal.e_ncf)
+                } else {
+                    "Factura de Crédito Fiscal Electrónica"
+                }
+            }
         };
 
         // Get work_dir from custom_fields (for QR generation)
@@ -913,6 +943,48 @@ mod tests {
         assert_eq!(
             FiscalInvoiceTemplate::hex_to_typst_rgb("#ff5500"),
             "rgb(255, 85, 0)"
+        );
+    }
+
+    #[test]
+    fn test_document_type_override_from_custom_fields() {
+        // Explicit override (used by Orders module: Cotización, Preventa, Conduce)
+        let mut fields = std::collections::HashMap::new();
+        fields.insert(
+            "document_type_label".to_string(),
+            serde_json::json!("Cotización"),
+        );
+        let custom_fields = Some(fields);
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_override(&custom_fields),
+            Some("Cotización".to_string())
+        );
+
+        // camelCase variant
+        let mut fields2 = std::collections::HashMap::new();
+        fields2.insert(
+            "documentTypeLabel".to_string(),
+            serde_json::json!("Preventa"),
+        );
+        let custom_fields2 = Some(fields2);
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_override(&custom_fields2),
+            Some("Preventa".to_string())
+        );
+
+        // Empty string is treated as missing (so it falls back to default)
+        let mut fields3 = std::collections::HashMap::new();
+        fields3.insert("document_type_label".to_string(), serde_json::json!(""));
+        let custom_fields3 = Some(fields3);
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_override(&custom_fields3),
+            None
+        );
+
+        // No override at all
+        assert_eq!(
+            FiscalInvoiceTemplate::get_document_type_override(&None),
+            None
         );
     }
 
