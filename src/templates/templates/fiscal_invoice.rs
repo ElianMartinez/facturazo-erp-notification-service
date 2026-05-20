@@ -100,11 +100,85 @@ impl FiscalInvoiceTemplate {
         format!("{}.{}", result, decimal_part)
     }
 
-    /// Check if items have document_date or notes (for conduce invoices)
+    /// Check if items have source document numbers for credit source-document invoices.
+    fn has_source_document_columns(items: &[InvoiceItem]) -> bool {
+        items.iter().any(|item| {
+            item.source_document_number
+                .as_deref()
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false)
+        })
+    }
+
+    /// Check if items have document_date for the legacy conduce layout.
+    /// Plain notes must not turn normal invoices into per-document-date tables.
     fn has_extended_columns(items: &[InvoiceItem]) -> bool {
+        items.iter().any(|item| item.document_date.is_some())
+    }
+
+    fn format_document_date(date: Option<&str>) -> String {
+        let Some(date) = date else {
+            return "-".to_string();
+        };
+
+        let parts: Vec<&str> = date.split('-').collect();
+        if parts.len() == 3 && parts[0].len() == 4 {
+            return format!("{}/{}/{}", parts[2], parts[1], parts[0]);
+        }
+
+        date.to_string()
+    }
+
+    fn format_source_document_number(number: Option<&str>) -> String {
+        let Some(number) = number.map(str::trim).filter(|value| !value.is_empty()) else {
+            return "-".to_string();
+        };
+
+        let sequence = number
+            .rsplit_once('-')
+            .map_or(number, |(_, suffix)| suffix.trim());
+        let normalized = sequence.trim_start_matches('0');
+
+        if normalized.is_empty() {
+            "0".to_string()
+        } else {
+            normalized.to_string()
+        }
+    }
+
+    /// Format source-document invoice rows:
+    /// Fecha | N# | Descripcion | Cant. | Precio | DES | Impuesto | Total
+    fn format_items_source_documents(&self, items: &[InvoiceItem]) -> String {
         items
             .iter()
-            .any(|item| item.document_date.is_some() || item.notes.is_some())
+            .map(|item| {
+                let date_str = Self::format_document_date(item.document_date.as_deref());
+                let number =
+                    Self::format_source_document_number(item.source_document_number.as_deref());
+                let tax_amount = item.tax_amount.unwrap_or_else(|| {
+                    let subtotal = item.get_subtotal() - item.discount.unwrap_or(0.0);
+                    item.tax_rate
+                        .map(|rate| subtotal * (rate / 100.0))
+                        .unwrap_or(0.0)
+                });
+
+                format!(
+                    "  [{}], [{}], [{}], [{:.2}], [{}], [{}], [{}], [{}]",
+                    utils::escape_typst(&date_str),
+                    utils::escape_typst(&number),
+                    format!(
+                        "#text(weight: \"bold\")[{}]",
+                        utils::escape_typst(&item.description)
+                    ),
+                    item.quantity,
+                    Self::format_currency(item.unit_price),
+                    Self::format_currency(item.discount.unwrap_or(0.0)),
+                    Self::format_currency(tax_amount),
+                    Self::format_currency(item.get_total())
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",\n")
     }
 
     /// Format items table rows - standard 6 columns:
@@ -168,6 +242,36 @@ impl FiscalInvoiceTemplate {
 
     /// Generate the complete items table section with dynamic columns
     fn generate_items_table(&self, items: &[InvoiceItem]) -> String {
+        if Self::has_source_document_columns(items) {
+            let items_content = self.format_items_source_documents(items);
+            return format!(
+                r#"#table(
+  columns: (55pt, 55pt, 1fr, 40pt, 60pt, 55pt, 60pt, 65pt),
+  stroke: 0.5pt + rgb(210, 216, 226),
+  fill: (x, y) => if y == 0 {{ rgb(239, 243, 248) }} else {{ white }},
+  align: (col, row) => {{
+    if col == 2 {{ left }}
+    else if col >= 3 {{ right }}
+    else {{ center }}
+  }},
+  inset: 5pt,
+
+  [#text(size: 7pt, weight: "bold")[FECHA]],
+  [#text(size: 7pt, weight: "bold")[N\#]],
+  [#text(size: 7pt, weight: "bold")[DESCRIPCIÓN]],
+  [#text(size: 7pt, weight: "bold")[CANT.]],
+  [#text(size: 7pt, weight: "bold")[PRECIO]],
+  [#text(size: 7pt, weight: "bold")[DES]],
+  [#text(size: 7pt, weight: "bold")[IMPUESTO]],
+  [#text(size: 7pt, weight: "bold")[TOTAL]],
+
+  // Items
+{items}
+)"#,
+                items = items_content
+            );
+        }
+
         let use_extended = Self::has_extended_columns(items);
 
         if use_extended {
@@ -329,28 +433,34 @@ impl FiscalInvoiceTemplate {
         // Build dynamic rows based on what values exist
         let mut rows = Vec::new();
 
-        // Subtotal rows - show detailed breakdown if we have both rates
-        if subtotal_gravado_18 > 0.0 && subtotal_gravado_16 > 0.0 {
-            rows.push(format!(
-                r#"[#text(size: 9pt)[Subtotal Gravado 18%:]], [#text(size: 9pt)[{}]]"#,
-                Self::format_currency(subtotal_gravado_18)
-            ));
-            rows.push(format!(
-                r#"[#text(size: 9pt)[Subtotal Gravado 16%:]], [#text(size: 9pt)[{}]]"#,
-                Self::format_currency(subtotal_gravado_16)
-            ));
+        let has_detailed_taxable =
+            subtotal_gravado_18 > 0.0 || subtotal_gravado_16 > 0.0 || subtotal_exento > 0.0;
+
+        if has_detailed_taxable {
+            if subtotal_gravado_18 > 0.0 {
+                rows.push(format!(
+                    r#"[#text(size: 9pt)[Monto Gravado 18%:]], [#text(size: 9pt)[{}]]"#,
+                    Self::format_currency(subtotal_gravado_18)
+                ));
+            }
+
+            if subtotal_gravado_16 > 0.0 {
+                rows.push(format!(
+                    r#"[#text(size: 9pt)[Monto Gravado 16%:]], [#text(size: 9pt)[{}]]"#,
+                    Self::format_currency(subtotal_gravado_16)
+                ));
+            }
+
+            if subtotal_exento > 0.0 {
+                rows.push(format!(
+                    r#"[#text(size: 9pt)[Monto Exento:]], [#text(size: 9pt)[{}]]"#,
+                    Self::format_currency(subtotal_exento)
+                ));
+            }
         } else {
             rows.push(format!(
-                r#"[#text(size: 9pt, weight: "bold")[Subtotal Gravado:]], [#text(size: 9pt)[{}]]"#,
+                r#"[#text(size: 9pt, weight: "bold")[Monto Gravado:]], [#text(size: 9pt)[{}]]"#,
                 Self::format_currency(total_subtotal_gravado)
-            ));
-        }
-
-        // Exempt subtotal if applicable
-        if subtotal_exento > 0.0 {
-            rows.push(format!(
-                r#"[#text(size: 9pt)[Subtotal Exento:]], [#text(size: 9pt)[{}]]"#,
-                Self::format_currency(subtotal_exento)
             ));
         }
 
@@ -362,16 +472,21 @@ impl FiscalInvoiceTemplate {
             ));
         }
 
-        // ITBIS rows - show detailed breakdown if we have both rates
-        if itbis_18 > 0.0 && itbis_16 > 0.0 {
-            rows.push(format!(
-                r#"[#text(size: 9pt)[ITBIS 18%:]], [#text(size: 9pt)[{}]]"#,
-                Self::format_currency(itbis_18)
-            ));
-            rows.push(format!(
-                r#"[#text(size: 9pt)[ITBIS 16%:]], [#text(size: 9pt)[{}]]"#,
-                Self::format_currency(itbis_16)
-            ));
+        let has_detailed_itbis = itbis_18 > 0.0 || itbis_16 > 0.0;
+        if has_detailed_itbis {
+            if itbis_18 > 0.0 {
+                rows.push(format!(
+                    r#"[#text(size: 9pt)[ITBIS 18%:]], [#text(size: 9pt)[{}]]"#,
+                    Self::format_currency(itbis_18)
+                ));
+            }
+
+            if itbis_16 > 0.0 {
+                rows.push(format!(
+                    r#"[#text(size: 9pt)[ITBIS 16%:]], [#text(size: 9pt)[{}]]"#,
+                    Self::format_currency(itbis_16)
+                ));
+            }
         } else {
             rows.push(format!(
                 r#"[#text(size: 9pt, weight: "bold")[Total ITBIS:]], [#text(size: 9pt)[{}]]"#,
@@ -891,6 +1006,112 @@ mod tests {
             FiscalInvoiceTemplate::get_document_type_name("E340000000001"),
             "Nota de Crédito Electrónica"
         );
+    }
+
+    #[test]
+    fn test_source_document_items_table_uses_requested_columns() {
+        let template = FiscalInvoiceTemplate::new();
+        let items = vec![InvoiceItem {
+            code: Some("P-9001".to_string()),
+            description: "Caja de lubricante 10W-30".to_string(),
+            quantity: 4.0,
+            unit: Some("UND".to_string()),
+            unit_price: 1800.0,
+            tax_rate: Some(18.0),
+            tax_amount: Some(1296.0),
+            discount: Some(0.0),
+            subtotal: Some(7200.0),
+            total: Some(8496.0),
+            document_date: Some("2026-04-10".to_string()),
+            source_document_number: Some("PV-101".to_string()),
+            notes: Some("Preventa".to_string()),
+        }];
+
+        let table = template.generate_items_table(&items);
+
+        assert!(table.contains("[FECHA]"));
+        assert!(table.contains("[N\\#]"));
+        assert!(table.contains("[DESCRIPCIÓN]"));
+        assert!(table.contains("[CANT.]"));
+        assert!(table.contains("[PRECIO]"));
+        assert!(table.contains("[DES]"));
+        assert!(table.contains("[IMPUESTO]"));
+        assert!(table.contains("[TOTAL]"));
+        assert!(table.contains("[10/04/2026]"));
+        assert!(table.contains("[101]"));
+        assert!(!table.contains("[PV-101]"));
+        assert!(!table.contains("[P-9001]"));
+        assert!(!table.contains("[Nota]"));
+        assert!(!table.contains("[Preventa]"));
+    }
+
+    #[test]
+    fn test_regular_invoice_notes_do_not_enable_document_date_columns() {
+        let template = FiscalInvoiceTemplate::new();
+        let items = vec![InvoiceItem {
+            code: Some("P-9001".to_string()),
+            description: "Producto normal".to_string(),
+            quantity: 1.0,
+            unit: Some("UND".to_string()),
+            unit_price: 100.0,
+            tax_rate: Some(18.0),
+            tax_amount: Some(18.0),
+            discount: Some(0.0),
+            subtotal: Some(100.0),
+            total: Some(118.0),
+            document_date: None,
+            source_document_number: None,
+            notes: Some("Nota interna".to_string()),
+        }];
+
+        let table = template.generate_items_table(&items);
+
+        assert!(table.contains("[Cantidad]"));
+        assert!(table.contains("[Descripción]"));
+        assert!(!table.contains("[Fecha]"));
+        assert!(!table.contains("[Nota]"));
+    }
+
+    #[test]
+    fn test_totals_render_tax_breakdown_without_mixing_rates() {
+        use serde_json::json;
+        use std::collections::HashMap;
+
+        let template = FiscalInvoiceTemplate::new();
+        let totals = InvoiceTotals {
+            subtotal: 1750.0,
+            tax_amount: 340.0,
+            discount_amount: Some(75.0),
+            total: 2090.0,
+            currency: "DOP".to_string(),
+            tip: None,
+        };
+        let custom_fields: HashMap<String, serde_json::Value> = HashMap::from([
+            ("TaxableAmount1".to_string(), json!(1000.0)),
+            ("TaxableAmount2".to_string(), json!(500.0)),
+            ("TaxableAmountExempt".to_string(), json!(250.0)),
+            ("Itbis1Amount".to_string(), json!(180.0)),
+            ("Itbis2Amount".to_string(), json!(80.0)),
+            ("DiscountAmount".to_string(), json!(75.0)),
+            ("TotalItbis".to_string(), json!(260.0)),
+        ]);
+
+        let rendered = template.format_totals(&totals, &Some(custom_fields));
+
+        assert!(rendered.contains("Monto Gravado 18%:"));
+        assert!(rendered.contains("1,000.00"));
+        assert!(rendered.contains("Monto Gravado 16%:"));
+        assert!(rendered.contains("500.00"));
+        assert!(rendered.contains("Monto Exento:"));
+        assert!(rendered.contains("250.00"));
+        assert!(rendered.contains("Descuento:"));
+        assert!(rendered.contains("75.00"));
+        assert!(rendered.contains("ITBIS 18%:"));
+        assert!(rendered.contains("180.00"));
+        assert!(rendered.contains("ITBIS 16%:"));
+        assert!(rendered.contains("80.00"));
+        assert!(!rendered.contains("Monto Gravado:"));
+        assert!(!rendered.contains("Total ITBIS:"));
     }
 
     #[test]

@@ -321,6 +321,14 @@ pub struct InvoiceItem {
     #[serde(alias = "document_date", alias = "documentDate", default)]
     pub document_date: Option<String>,
 
+    /// Source document number for invoices generated from credit sales documents.
+    #[serde(
+        alias = "source_document_number",
+        alias = "sourceDocumentNumber",
+        default
+    )]
+    pub source_document_number: Option<String>,
+
     /// Notes for the line item (consumer info, plate number, etc.)
     #[serde(default)]
     pub notes: Option<String>,
@@ -823,6 +831,7 @@ mod tests {
                 subtotal: None,
                 total: None,
                 document_date: None,
+                source_document_number: None,
                 notes: None,
             }],
             totals: None,
