@@ -328,6 +328,7 @@ fn get_sample_data_for_template(template_id: &str) -> TemplateData {
                         subtotal: Some(82500.00),
                         total: Some(97380.00),
                         document_date: None,
+                        source_document_number: None,
                         notes: None,
                     },
                     InvoiceItem {
@@ -342,6 +343,7 @@ fn get_sample_data_for_template(template_id: &str) -> TemplateData {
                         subtotal: Some(160000.00),
                         total: Some(188800.00),
                         document_date: None,
+                        source_document_number: None,
                         notes: None,
                     },
                 ],
