@@ -40,7 +40,7 @@ pub async fn generate_pdf_from_template(
         .unwrap_or(false);
 
     let template_data = match template_type {
-        Some("invoice") | Some("fiscal_invoice") => {
+        Some("invoice") | Some("fiscal_invoice") | Some("invoice_fiscal") => {
             // Get data from either "data" or directly from root
             let invoice_json = data.get("data").cloned().unwrap_or_else(|| {
                 // If no "data" field, try to use the root object (minus metadata fields)
@@ -285,7 +285,7 @@ fn get_sample_data_for_template(template_id: &str) -> TemplateData {
     use crate::templates::*;
 
     match template_id {
-        "fiscal_electronic" | "fiscal_invoice" => {
+        "fiscal_electronic" | "fiscal_invoice" | "invoice_fiscal" => {
             TemplateData::Invoice(InvoiceData {
                 invoice_number: "INV-2024-001".to_string(),
                 issue_date: "2024-01-15".to_string(),

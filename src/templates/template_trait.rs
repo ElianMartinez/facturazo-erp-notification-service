@@ -33,8 +33,9 @@ impl TemplateRegistry {
         use crate::templates::templates::*;
 
         // Factura fiscal electrónica
-        let fiscal = Arc::new(FiscalInvoiceTemplate::new());
-        templates.insert(fiscal.template_id().to_string(), fiscal);
+        let fiscal: Arc<dyn TypstTemplate> = Arc::new(FiscalInvoiceTemplate::new());
+        templates.insert(fiscal.template_id().to_string(), fiscal.clone());
+        templates.insert("invoice_fiscal".to_string(), fiscal);
 
         // Factura simple
         let simple = Arc::new(SimpleInvoiceTemplate::new());
