@@ -699,64 +699,64 @@ impl FiscalInvoiceTemplate {
         // Build the complete Typst document following exact DGII layout
         let content = format!(
             r##"#set document(title: "Factura Fiscal - {invoice_number}", author: "{company_name}")
+#set text(font: "{font}", size: 9pt, lang: "es", fill: rgb(30, 30, 30))
 #set page(
   paper: "us-letter",
-  margin: (left: 15mm, right: 15mm, top: 15mm, bottom: 20mm),
+  margin: (left: 15mm, right: 15mm, top: 40mm, bottom: 20mm),
+  header: [
+    // ============================================================
+    // HEADER SECTION - DGII Official Layout
+    // Left: Logo + Company Info | Right: Document Type + e-NCF
+    // ============================================================
+    #grid(
+      columns: (1fr, auto),
+      gutter: 20pt,
+      [
+        // Left side: Company logo and info
+        #grid(
+          columns: (55pt, 1fr),
+          gutter: 10pt,
+          [
+            // Logo placeholder (company initials in colored box)
+            #rect(width: 50pt, height: 50pt, fill: {primary_color}, radius: 3pt)[
+              #place(center + horizon)[
+                #text(size: 18pt, weight: "bold", fill: white)[{company_initials}]
+              ]
+            ]
+          ],
+          [
+            #text(size: 14pt, weight: "bold", fill: {primary_color})[{company_name}]
+            #linebreak()
+            #text(size: 9pt)[{legal_name}]
+            #linebreak()
+            {branch_section}
+            #text(size: 9pt, weight: "bold")[RNC {tax_id}]
+            #linebreak()
+            #text(size: 8pt)[Dirección: {address}]
+            #linebreak()
+            #text(size: 8pt, weight: "bold")[Fecha Emisión:] #text(size: 8pt)[{issue_date}]
+          ]
+        )
+      ],
+      [
+        // Right side: Document type and fiscal info (DGII format)
+        #align(right)[
+          #text(size: 12pt, weight: "bold", fill: {primary_color})[{document_type}]
+          #v(6pt)
+          {encf_section}
+        ]
+      ]
+    )
+    #v(8pt)
+    #line(length: 100%, stroke: 1pt + rgb(180, 180, 180))
+    #v(4pt)
+  ],
   footer: context [
     #align(right)[
       #text(size: 8pt)[Página No. #counter(page).display() de #counter(page).final().first()]
     ]
   ]
 )
-#set text(font: "{font}", size: 9pt, lang: "es", fill: rgb(30, 30, 30))
-
-// ============================================================
-// HEADER SECTION - DGII Official Layout
-// Left: Logo + Company Info | Right: Document Type + e-NCF
-// ============================================================
-#grid(
-  columns: (1fr, auto),
-  gutter: 20pt,
-  [
-    // Left side: Company logo and info
-    #grid(
-      columns: (55pt, 1fr),
-      gutter: 10pt,
-      [
-        // Logo placeholder (company initials in colored box)
-        #rect(width: 50pt, height: 50pt, fill: {primary_color}, radius: 3pt)[
-          #place(center + horizon)[
-            #text(size: 18pt, weight: "bold", fill: white)[{company_initials}]
-          ]
-        ]
-      ],
-      [
-        #text(size: 14pt, weight: "bold", fill: {primary_color})[{company_name}]
-        #linebreak()
-        #text(size: 9pt)[{legal_name}]
-        #linebreak()
-        {branch_section}
-        #text(size: 9pt, weight: "bold")[RNC {tax_id}]
-        #linebreak()
-        #text(size: 8pt)[Dirección: {address}]
-        #linebreak()
-        #text(size: 8pt, weight: "bold")[Fecha Emisión:] #text(size: 8pt)[{issue_date}]
-      ]
-    )
-  ],
-  [
-    // Right side: Document type and fiscal info (DGII format)
-    #align(right)[
-      #text(size: 12pt, weight: "bold", fill: {primary_color})[{document_type}]
-      #v(6pt)
-      {encf_section}
-    ]
-  ]
-)
-
-#v(10pt)
-#line(length: 100%, stroke: 1pt + rgb(180, 180, 180))
-#v(8pt)
 
 // ============================================================
 // CLIENT SECTION - DGII Standard
