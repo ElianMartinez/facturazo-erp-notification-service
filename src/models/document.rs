@@ -9,6 +9,8 @@ pub struct DocumentRequest {
     #[serde(default = "Uuid::new_v4")]
     pub id: Uuid,
     pub template_id: String,
+    #[serde(default)]
+    pub template_source: Option<String>,
     pub document_type: DocumentType,
     pub data: serde_json::Value,
     pub priority: Priority,

@@ -193,6 +193,7 @@ impl KafkaHandler {
             user_id: req.user_id,
             document_type: parse_document_type(&req.document_type),
             template_id: req.template_id,
+            template_source: None,
             template_version: "latest".to_string(),
             data: req.data,
             format: parse_format(&req.format),
