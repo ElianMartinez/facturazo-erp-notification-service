@@ -325,6 +325,7 @@ async fn test_document_orchestrator() {
             }
         }),
         template_id: "invoice_fiscal".to_string(),
+        template_source: None,
         template_version: "1.0.0".to_string(),
         storage_enabled: true,
         notification_enabled: false,
