@@ -181,25 +181,26 @@ impl FiscalInvoiceTemplate {
             .join(",\n")
     }
 
-    /// Format items table rows - standard 6 columns:
-    /// Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
+    /// Format items table rows - standard 7 columns:
+    /// Cantidad | Descripción | Unidad de Medida | Precio | Descuento | ITBIS | Valor
     fn format_items_standard(&self, items: &[InvoiceItem]) -> String {
         items
             .iter()
             .map(|item| {
-                let itbis_amount = if let Some(rate) = item.tax_rate {
+                let itbis_amount = item.tax_amount.unwrap_or_else(|| {
                     let subtotal = item.get_subtotal() - item.discount.unwrap_or(0.0);
-                    subtotal * (rate / 100.0)
-                } else {
-                    item.tax_amount.unwrap_or(0.0)
-                };
+                    item.tax_rate
+                        .map(|rate| subtotal * (rate / 100.0))
+                        .unwrap_or(0.0)
+                });
 
                 format!(
-                    "  [{:.2}], [{}], [{}], [{}], [{}], [{}]",
+                    "  [{:.2}], [{}], [{}], [{}], [{}], [{}], [{}]",
                     item.quantity,
                     utils::escape_typst(&item.description),
                     item.unit.as_deref().unwrap_or("UND"),
                     Self::format_currency(item.unit_price),
+                    Self::format_currency(item.discount.unwrap_or(0.0)),
                     Self::format_currency(itbis_amount),
                     Self::format_currency(item.get_total())
                 )
@@ -214,12 +215,12 @@ impl FiscalInvoiceTemplate {
         items
             .iter()
             .map(|item| {
-                let itbis_amount = if let Some(rate) = item.tax_rate {
+                let itbis_amount = item.tax_amount.unwrap_or_else(|| {
                     let subtotal = item.get_subtotal() - item.discount.unwrap_or(0.0);
-                    subtotal * (rate / 100.0)
-                } else {
-                    item.tax_amount.unwrap_or(0.0)
-                };
+                    item.tax_rate
+                        .map(|rate| subtotal * (rate / 100.0))
+                        .unwrap_or(0.0)
+                });
 
                 let date_str = item.document_date.as_deref().unwrap_or("-");
                 let notes_str = item.notes.as_deref().unwrap_or("");
@@ -305,11 +306,11 @@ impl FiscalInvoiceTemplate {
                 items = items_content
             )
         } else {
-            // Standard table with 6 columns
+            // Standard table with 7 columns
             let items_content = self.format_items_standard(items);
             format!(
                 r#"#table(
-  columns: (55pt, 1fr, 75pt, 70pt, 70pt, 80pt),
+  columns: (50pt, 1fr, 62pt, 62pt, 70pt, 65pt, 75pt),
   stroke: 0.5pt + rgb(150, 150, 150),
   fill: (x, y) => if y == 0 {{ rgb(240, 240, 240) }} else {{ white }},
   align: (col, row) => {{
@@ -324,6 +325,7 @@ impl FiscalInvoiceTemplate {
   [#text(size: 8pt, weight: "bold")[Descripción]],
   [#text(size: 8pt, weight: "bold")[Unidad de Medida]],
   [#text(size: 8pt, weight: "bold")[Precio]],
+  [#text(size: 8pt, weight: "bold")[Descuento]],
   [#text(size: 8pt, weight: "bold")[ITBIS]],
   [#text(size: 8pt, weight: "bold")[Valor]],
 
@@ -770,8 +772,8 @@ impl FiscalInvoiceTemplate {
 #v(10pt)
 
 // ============================================================
-// ITEMS TABLE - Dynamic columns (6 standard or 8 for conduce)
-// Standard: Cantidad | Descripción | Unidad de Medida | Precio | ITBIS | Valor
+// ITEMS TABLE - Dynamic columns (7 standard or 8 for conduce)
+// Standard: Cantidad | Descripción | Unidad de Medida | Precio | Descuento | ITBIS | Valor
 // Extended: Fecha | Cant. | Descripción | Nota | Unidad | Precio | ITBIS | Valor
 // ============================================================
 {items_table}
