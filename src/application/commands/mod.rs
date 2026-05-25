@@ -12,6 +12,8 @@ pub struct GenerateDocumentCommand {
     pub user_id: Option<String>,
     pub document_type: crate::domain::document::DocumentType,
     pub template_id: String,
+    #[serde(default)]
+    pub template_source: Option<String>,
     pub template_version: String,
     pub data: serde_json::Value,
     pub format: crate::domain::document::DocumentFormat,

@@ -66,14 +66,30 @@ impl DocumentOrchestrator {
         let start_time = std::time::Instant::now();
         info!("Starting document generation workflow");
 
-        // 1. Try dynamic template from backend (PDF only)
-        let dynamic_result = if command.format == crate::domain::document::DocumentFormat::Pdf {
-            self.try_dynamic_template(&command).await
+        // 1. Prefer an inline Typst template sent by core-service. This keeps
+        // sales document layout ownership in Core while this service only compiles.
+        let inline_result = if command.format == crate::domain::document::DocumentFormat::Pdf {
+            self.try_inline_template(&command).await
         } else {
             None
         };
 
-        let (document_bytes, mime_type, document_id) = if let Some(pdf_bytes) = dynamic_result {
+        // 2. Try dynamic template from backend registry (PDF only)
+        let dynamic_result = if command.format == crate::domain::document::DocumentFormat::Pdf {
+            if inline_result.is_none() {
+                self.try_dynamic_template(&command).await
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let (document_bytes, mime_type, document_id) = if let Some(pdf_bytes) = inline_result {
+            info!("Generated PDF from inline core-service template");
+            let doc_id = uuid::Uuid::new_v4().to_string();
+            (pdf_bytes, "application/pdf".to_string(), doc_id)
+        } else if let Some(pdf_bytes) = dynamic_result {
             info!("Generated PDF from dynamic backend template");
             let doc_id = uuid::Uuid::new_v4().to_string();
             (pdf_bytes, "application/pdf".to_string(), doc_id)
@@ -150,6 +166,23 @@ impl DocumentOrchestrator {
             generation_time_ms: elapsed.as_millis() as u64,
             file_size,
         })
+    }
+
+    /// Try to generate PDF using a dynamic template from the .NET backend.
+    /// Returns None if resolver is not configured or resolution/generation fails.
+    async fn try_inline_template(&self, command: &GenerateDocumentCommand) -> Option<Vec<u8>> {
+        let source = command.template_source.as_deref()?.trim();
+        if source.is_empty() {
+            return None;
+        }
+
+        match self.typst_generator.generate_pdf(source).await {
+            Ok(pdf) => Some(pdf),
+            Err(e) => {
+                warn!(error = %e, "Inline core-service template compilation failed, falling back to template registry");
+                None
+            }
+        }
     }
 
     /// Try to generate PDF using a dynamic template from the .NET backend.
